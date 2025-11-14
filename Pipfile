@@ -1,0 +1,20 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+streamlit = "<1.11.*"
+opencv-python = "4.5.2.52"
+numpy = "*"
+torchvision = "0.9.1"
+torch = "1.8.1"
+Pillow = "8.2.0"
+pyyaml = "6.0"
+matplotlib = "*"
+opencv-python-headless = "4.5.2.52"
+av = "*"
+streamlit-webrtc = "0.36.1"
+altair = "4.2.2"
