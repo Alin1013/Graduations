@@ -1,6 +1,6 @@
 # 数据集路径配置（必填）
-train: ./JPEGImages  # 对应原 dir_detect_path，训练集图片存放位置
-val: ./JPEGImages    # 若暂无单独验证集，可暂时复用训练集路径（后续建议拆分）
+train: /Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages  # 对应原 dir_detect_path，训练集图片存放位置
+val: /Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages    # 若暂无单独验证集，可暂时复用训练集路径（后续建议拆分）
 
 # 类别配置（对应原 train.py 相关配置）
 nc: 8  # 类别数量
