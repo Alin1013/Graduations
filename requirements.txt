@@ -15,3 +15,17 @@ labelimg==1.8.6
 streamlit==1.51.0
 streamlit_webrtc==0.63.11
 ultralytics== 8.3.229
+
+
+# YOLOv8n基础模型训练
+# python train.py --epochs 100 --bs 8 --imgsz 640 \
+#    --weights yolov8n.pt --data data/gesture.yaml --cuda
+
+# 冻结训练
+# python train.py --epochs 100 --bs 8 --imgsz 640 \
+#    --weights yolov8n.pt --data data/gesture.yaml --cuda \
+#    --freeze --freeze-epochs 50
+#预测命令
+# python predict.py --tiny --cuda \
+#    --weights runs/detect/train/weights/best.pt \
+#    --shape 640
