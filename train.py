@@ -1,4 +1,4 @@
-# 简化训练模型
+# 简化后的train.py
 import argparse
 from ultralytics import YOLO
 from get_yaml import get_config
