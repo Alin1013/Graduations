@@ -19,8 +19,6 @@ ultralytics== 8.3.229
 
 
 # YOLOv8n基础模型训练
-# python3 train.py --epochs 100 --bs 8 --imgsz 640 \
-#    --weights yolov8n.pt --data data/gesture.yaml --cuda
 #无显卡，使用cpu
 # python3 train.py --epochs 10 --imgsz 640 --device cpu --batch-size 4 --weights ./yolov8n.pt
 
