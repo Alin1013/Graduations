@@ -10,5 +10,5 @@ names: ["up","down","left","right","front","back","clockwise","anticlockwise"]  
 confidence: 0.5  # 置信度阈值
 nms_iou: 0.3     # NMS IoU阈值
 letterbox_image: False  # 是否使用letterbox缩放图像
-lr_decay_type: cos  # 学习率下降方式（cos/step）
+# lr_decay_type: cos  # 学习率下降方式（cos/step）
 num_workers: 4  # 多线程数据读取数量（Windows系统建议改为0）
