@@ -11,7 +11,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch-size', '-bs', type=int, default=8, help='批次大小')
     parser.add_argument('--imgsz', type=int, default=640, help='输入图像尺寸')
     parser.add_argument('--weights', '-w', type=str, default='yolov8n.pt', help='初始权重路径')
-    parser.add_argument('--data', type=str, default='data/gesture.yaml', help='数据集配置文件')
+    parser.add_argument('--data', type=str, default='model_data/gesture.yaml', help='数据集配置文件')
     parser.add_argument('--device', type=str, default='0', help='设备，0为GPU，cpu为CPU')
     parser.add_argument('--freeze', action='store_true', help='冻结训练')
     parser.add_argument('--freeze-epochs', type=int, default=50, help='冻结训练轮数')

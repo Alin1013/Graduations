@@ -1,13 +1,14 @@
-# detect.py 相关配置（半自动标注）
-dir_detect_path: ./JPEGImages  # 图片存放位置
-detect_save_path: ./Annotation  # 标注结果保存位置
+# 数据集路径配置（必填）
+train: ./JPEGImages  # 对应原 dir_detect_path，训练集图片存放位置
+val: ./JPEGImages    # 若暂无单独验证集，可暂时复用训练集路径（后续建议拆分）
 
-# train.py 相关配置
+# 类别配置（对应原 train.py 相关配置）
 nc: 8  # 类别数量
-classes: ["up","down","left","right","front","back","clockwise","anticlockwise"]  # 类别名称
-confidence: 0.5  # 置信度阈值
-nms_iou: 0.3  # NMS IoU阈值
-letterbox_image: False  # 是否使用letterbox缩放图像
+names: ["up","down","left","right","front","back","clockwise","anticlockwise"]  # 类别名称
 
-lr_decay_type: cos  # 学习率下降方式，可选step、cos
-num_workers: 4  # 多线程数据读取数量,win系统建议选0
+# 检测/训练参数配置（YOLOv8 训练时会读取）
+confidence: 0.5  # 置信度阈值
+nms_iou: 0.3     # NMS IoU阈值
+letterbox_image: False  # 是否使用letterbox缩放图像
+lr_decay_type: cos  # 学习率下降方式（cos/step）
+num_workers: 4  # 多线程数据读取数量（Windows系统建议改为0）
