@@ -47,7 +47,7 @@ if __name__ == "__main__":
     map_out_path = 'map_out'  # 结果输出路径
 
     # 获取验证集图像ID
-    image_ids = open(os.path.join(VOCdevkit_path, "VOC2007/ImageSets/Main/val.txt")).read().strip().split()
+    image_ids = open(os.path.join(VOCdevkit_path, "VOC2026/ImageSets/Main/val.txt")).read().strip().split()
 
     # 创建输出目录
     os.makedirs(map_out_path, exist_ok=True)
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
         print("生成预测结果...")
         for image_id in tqdm(image_ids):
-            image_path = os.path.join(VOCdevkit_path, f"VOC2007/JPEGImages/{image_id}.jpg")
+            image_path = os.path.join(VOCdevkit_path, f"VOC2026/JPEGImages/{image_id}.jpg")
             image = Image.open(image_path)
 
             # 保存可视化图像（如果需要）
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         for image_id in tqdm(image_ids):
             with open(os.path.join(map_out_path, f"ground-truth/{image_id}.txt"), "w") as f:
                 # 解析VOC格式xml标注
-                xml_path = os.path.join(VOCdevkit_path, f"VOC2007/Annotations/{image_id}.xml")
+                xml_path = os.path.join(VOCdevkit_path, f"VOC2026/Annotations/{image_id}.xml")
                 root = ET.parse(xml_path).getroot()
 
                 for obj in root.findall('object'):

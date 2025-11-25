@@ -5,7 +5,7 @@ class GEN_Annotations:
         self.root = etree.Element("annotation")
  
         child1 = etree.SubElement(self.root, "folder")
-        child1.text = "VOC2007"
+        child1.text = "VOC2026"
  
         child2 = etree.SubElement(self.root, "filename")
         child2.text = filename
@@ -13,7 +13,7 @@ class GEN_Annotations:
         child3 = etree.SubElement(self.root, "source")
  
         child4 = etree.SubElement(child3, "annotation")
-        child4.text = "PASCAL VOC2007"
+        child4.text = "PASCAL VOC2026"
         child5 = etree.SubElement(child3, "database")
         child5.text = "Unknown"
  

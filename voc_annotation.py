@@ -6,9 +6,9 @@ from utils.utils import get_classes
 
 #--------------------------------------------------------------------------------------------------------------------------------#
 #   annotation_mode用于指定该文件运行时计算的内容
-#   annotation_mode为0代表整个标签处理过程，包括获得VOCdevkit/VOC2007/ImageSets里面的txt以及训练用的2007_train.txt、2007_val.txt
-#   annotation_mode为1代表获得VOCdevkit/VOC2007/ImageSets里面的txt
-#   annotation_mode为2代表获得训练用的2007_train.txt、2007_val.txt
+#   annotation_mode为0代表整个标签处理过程，包括获得VOCdevkit/VOC2026/ImageSets里面的txt以及训练用的2026_train.txt、2026_val.txt
+#   annotation_mode为1代表获得VOCdevkit/VOC2026/ImageSets里面的txt
+#   annotation_mode为2代表获得训练用的2026_train.txt、2026_val.txt
 #--------------------------------------------------------------------------------------------------------------------------------#
 annotation_mode     = 0
 #-------------------------------------------------------------------#
@@ -57,8 +57,8 @@ if __name__ == "__main__":
     random.seed(0)
     if annotation_mode == 0 or annotation_mode == 1:
         print("Generate txt in ImageSets.")
-        xmlfilepath     = os.path.join(VOCdevkit_path, 'VOC2007/Annotations')
-        saveBasePath    = os.path.join(VOCdevkit_path, 'VOC2007/ImageSets/Main')
+        xmlfilepath     = os.path.join(VOCdevkit_path, 'VOC2026/Annotations')
+        saveBasePath    = os.path.join(VOCdevkit_path, 'VOC2026/ImageSets/Main')
         temp_xml        = os.listdir(xmlfilepath)
         total_xml       = []
         for xml in temp_xml:
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         print("Generate txt in ImageSets done.")
 
     if annotation_mode == 0 or annotation_mode == 2:
-        print("Generate gesture_train.txt and 2007_val.txt for train.")
+        print("Generate gesture_train.txt and 2026_val.txt for train.")
         for year, image_set in VOCdevkit_sets:
             image_ids = open(os.path.join(VOCdevkit_path, 'VOC%s/ImageSets/Main/%s.txt'%(year, image_set)), encoding='utf-8').read().strip().split()
             list_file = open('%s_%s.txt'%(year, image_set), 'w', encoding='utf-8')
