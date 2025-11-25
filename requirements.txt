@@ -13,9 +13,8 @@ h5py==3.8.0
 tensorboard
 pandas==2.3.3
 torchinfo==1.8.0
-labelimg==1.8.6
 streamlit_webrtc==0.63.11
-ultralytics== 8.3.229
+ultralytics==8.3.229
 
 
 # YOLOv8n基础模型训练
