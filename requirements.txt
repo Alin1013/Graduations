@@ -27,3 +27,6 @@ ultralytics==8.3.229
 # python3 predict.py --tiny --cuda \
 #    --weights runs/detect/train/weights/best.pt \
 #    --shape 640
+
+#streamlit交互界面打开命令
+#  streamlit run gesture.streamlit.py
