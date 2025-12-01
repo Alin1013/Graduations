@@ -1,2 +1,77 @@
+# Python字节码文件
 *.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+
+# 操作系统相关文件
 *.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.env
+.venv
+*.egg-info/
+dist/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 深度学习相关
+# 训练日志和权重
+logs/
+*.pth
+*.pt
+*.ckpt
+runs/
+
+# 数据集相关（如果不打算上传原始数据）
+VOCdevkit/VOC2026/JPEGImages/
+VOCdevkit/VOC2026/Annotations/
+!VOCdevkit/VOC2026/Annotations/README.md  # 保留说明文件
+!VOCdevkit/VOC2026/ImageSets/Main/README.md  # 保留说明文件
+
+# IDE配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.idea/*
+!.idea/vcs.xml  # 保留版本控制配置（如果需要）
+
+# 临时文件
+tmp/
+temp/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# 配置文件
+*.ini
+*.conf
+*.cfg
+!model_data/gesture.yaml  # 保留模型配置
+!model_data/gesture_classes.txt  # 保留类别定义
