@@ -32,46 +32,44 @@ def train_model(opt):
     model = YOLO(opt.weights)
 
     # 配置训练参数（包含L1正则化）
-    train_kwargs = {
+    base_train_kwargs = {
         'data': opt.data,
-        'epochs': opt.epochs,
         'imgsz': opt.imgsz,
         'batch': opt.batch_size,
         'device': opt.device,
         'lr0': opt.lr0,
-        'workers': 4,  # 对应数据集配置中的workers
-        'weight_decay': opt.l1_lambda,  # 使用L1正则化（ultralytics通过weight_decay支持）
-        'name': 'normal_train'
+        'workers': 4,
+        'weight_decay': opt.l1_lambda,
     }
 
-    # 冻结训练逻辑
+    # 冻结训练逻辑（使用Ultralytics YOLOv8的正确冻结方式）
     if opt.freeze:
-        # 冻结主干网络
-        model.freeze()
-        # 冻结训练阶段
-        model.train(
-            **{**train_kwargs,
-               'epochs': opt.freeze_epochs,
-               'name': 'freeze_train'
-               }
-        )
-        # 解冻网络
-        model.unfreeze()
-        # 计算剩余训练轮数
+        # 冻结主干网络（YOLOv8的backbone通常有10层左右，根据实际结构调整）
+        # 冻结前10层（可根据模型结构调整层数）
+        model.train(**{
+            **base_train_kwargs,
+            'epochs': opt.freeze_epochs,
+            'freeze': 10,  # 指定冻结的层数
+            'name': 'freeze_train'
+        })
+
+        # 解冻并微调剩余轮数
         remaining_epochs = opt.epochs - opt.freeze_epochs
         if remaining_epochs > 0:
-            # 微调阶段（学习率降低）
-            model.train(
-                **{**train_kwargs,
-                   'epochs': remaining_epochs,
-                   'lr0': opt.lr0 / 10,  # 学习率衰减
-                   'name': 'unfreeze_train',
-                   'resume': True  # 从冻结训练的最后一个 checkpoint 继续
-                   }
-            )
+            model.train(**{
+                **base_train_kwargs,
+                'epochs': remaining_epochs,
+                'lr0': opt.lr0 / 10,  # 降低学习率
+                'name': 'unfreeze_train',
+                'resume': True  # 从上次训练继续
+            })
     else:
-        # 正常训练
-        model.train(**train_kwargs)
+        # 正常训练（不冻结）
+        model.train(**{
+            **base_train_kwargs,
+            'epochs': opt.epochs,
+            'name': 'normal_train'
+        })
 
     # 验证模式（如果指定）
     if opt.mode == 'val':

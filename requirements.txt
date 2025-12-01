@@ -22,9 +22,7 @@ ultralytics==8.3.229
 # python3 train.py --epochs 10 --imgsz 640 --device cpu --batch-size 4 --weights ./yolov8n.pt
 
 # 冻结训练
-# python3 train.py --epochs 100 --bs 8 --imgsz 640 \
-#    --weights yolov8n.pt --data data/gesture.yaml --cuda \
-#    --freeze --freeze-epochs 50
+# python3 train.py --epochs 100 --freeze --freeze-epochs 50 --device cpu
 #预测命令
 # python3 predict.py --tiny --cuda \
 #    --weights runs/detect/train/weights/best.pt \

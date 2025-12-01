@@ -1,14 +1,14 @@
 # 数据集路径配置（必填）
-train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages  # 对应原 dir_detect_path，训练集图片存放位置
-val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages    # 若暂无单独验证集，可暂时复用训练集路径（后续建议拆分）
+train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages  # 训练集图片路径
+val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages    # 验证集图片路径
+labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/Annotations  # 标签文件路径（存放YOLO格式.txt）
 
-# 类别配置（对应原 train.py 相关配置）
-nc: 8  # 类别数量
-names: ["up","down","left","right","front","back","clockwise","anticlockwise"]  # 类别名称
+# 类别配置
+nc: 8
+names: ["up","down","left","right","front","back","clockwise","anticlockwise"]
 
-# 检测/训练参数配置（YOLOv8 训练时会读取）
-confidence: 0.5  # 置信度阈值
-nms_iou: 0.3     # NMS IoU阈值
-letterbox_image: False  # 是否使用letterbox缩放图像
-# lr_decay_type: cos  # 学习率下降方式（cos/step）
-num_workers: 4  # 多线程数据读取数量（Windows系统建议改为0）
+# 其他参数保持不变
+confidence: 0.5
+nms_iou: 0.3
+letterbox_image: False
+num_workers: 0  # Mac系统建议设为0，避免多线程问题
