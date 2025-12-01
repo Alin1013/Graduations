@@ -1,338 +1,312 @@
-"""Create an Object Detection Web App using PyTorch and Streamlit."""
-# import libraries
-from PIL import Image
-from torchvision import models, transforms
-import torch
-import streamlit as st
-# 替换 YOLOv4 导入为 YOLOv8
-from ultralytics import YOLO
+"""手势检测web平台"""
 import os
-import urllib
+import time
+import cv2
 import numpy as np
+import torch
+from PIL import Image
+import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
-# 设置网页的icon
-st.set_page_config(page_title='Gesture Detector', page_icon='✌',
-                   layout='centered', initial_sidebar_state='expanded')
+from ultralytics import YOLO
 
-RTC_CONFIGURATION = RTCConfiguration(
-    {
-      "RTCIceServers": [{  # 修正参数名：RTCIceServer → RTCIceServers
-        "urls": ["stun:stun.l.google.com:19302"],
-        "username": "pikachu",
-        "credential": "1234",
-      }]
-    }
+# 页面配置
+st.set_page_config(
+    page_title="手势检测平台",
+    page_icon="✌️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-def main():
-    # Render the readme as markdown using st.markdown.
-    # 增加文件存在性判断，避免报错
-    if os.path.exists("instructions.md"):
-        readme_text = st.markdown(open("instructions.md", encoding='utf-8').read())
-    else:
-        readme_text = st.markdown("# 手势检测Web应用\n请上传图片/视频或使用摄像头进行检测")
+# WebRTC配置
+RTC_CONFIGURATION = RTCConfiguration({
+    "RTCIceServers": [{
+        "urls": ["stun:stun.l.google.com:19302"]
+    }]
+})
 
-    # Once we have the dependencies, add a selector for the app mode on the sidebar.
-    st.sidebar.title("What to do")
-    app_mode = st.sidebar.selectbox("Choose the app mode",
-        ["Show instructions", "Run the app", "Show the source code"])
-    if app_mode == "Show instructions":
-        st.sidebar.success('To continue select "Run the app".')
-    elif app_mode == "Show the source code":
-        readme_text.empty()
-        # 修正文件名为当前脚本名
-        if os.path.exists(__file__):
-            st.code(open(__file__, encoding='utf-8').read())
-        else:
-            st.warning("Source code file not found")
-    elif app_mode == "Run the app":
-        # Download external dependencies.
-        for filename in EXTERNAL_DEPENDENCIES.keys():
-            download_file(filename)
-
-        readme_text.empty()
-        run_the_app()
-
-# -------------------------- 关键修改：YOLOv8 官方权重配置 --------------------------
-# YOLOv8 官方权重下载地址（ultralytics官方CDN，稳定下载）
-# 权重说明：n(纳米) < s(小) < m(中) < l(大) < x(超大)，尺寸越大精度越高、速度越慢
-EXTERNAL_DEPENDENCIES = {
-    "yolov8n.pt": {  # 纳米模型（最快，适合CPU/边缘设备）
-        "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt",
-        "size": 6257408  # 文件大小：~6.26 MB
-    },
-    "yolov8s.pt": {  # 小型模型（平衡速度与精度）
-        "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8s.pt",
-        "size": 24555520  # 文件大小：~24.56 MB
-    },
-    "yolov8m.pt": {  # 中型模型（高精度）
-        "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8m.pt",
-        "size": 56834560  # 文件大小：~56.83 MB
-    },
-    "yolov8l.pt": {  # 大型模型（更高精度）
-        "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8l.pt",
-        "size": 98406400  # 文件大小：~98.41 MB
-    },
-    "yolov8x.pt": {  # 超大模型（最高精度，适合GPU）
-        "url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8x.pt",
-        "size": 163714560  # 文件大小：~163.71 MB
-    }
+# YOLOv8模型配置
+MODEL_OPTIONS = {
+    "yolov8n.pt": {"name": "Nano (最快)", "size": 6257408},
+    "yolov8s.pt": {"name": "Small (平衡)", "size": 24555520},
+    "yolov8m.pt": {"name": "Medium (高精度)", "size": 56834560},
+    "yolov8l.pt": {"name": "Large (超高精度)", "size": 98406400},
+    "yolov8x.pt": {"name": "X-Large (最高精度)", "size": 163714560}
 }
 
-# This file downloader demonstrates Streamlit animation.
-def download_file(file_path):
-    # Don't download the file twice. (If possible, verify the download using the file length.)
-    if os.path.exists(file_path):
-        if "size" not in EXTERNAL_DEPENDENCIES[file_path]:
-            return
-        elif os.path.getsize(file_path) == EXTERNAL_DEPENDENCIES[file_path]["size"]:
-            return
-    # These are handles to two visual elements to animate.
-    weights_warning, progress_bar = None, None
+INPUT_SHAPES = [640, 1280]
+GESTURE_CLASSES = ["up", "down", "left", "right", "front", "back", "clockwise", "anticlockwise"]
+
+# 下载模型权重
+def download_model(model_path):
+    if os.path.exists(model_path) and os.path.getsize(model_path) == MODEL_OPTIONS[model_path]["size"]:
+        return True
+
     try:
-        weights_warning = st.warning(f"Downloading {file_path}... (Size: {EXTERNAL_DEPENDENCIES[file_path]['size']/1024/1024:.2f} MB)")
-        progress_bar = st.progress(0)
-        with open(file_path, "wb") as output_file:
-            with urllib.request.urlopen(EXTERNAL_DEPENDENCIES[file_path]["url"]) as response:
-                length = int(response.info()["Content-Length"])
-                counter = 0.0
-                MEGABYTES = 2.0 ** 20.0
-                while True:
-                    data = response.read(8192)
-                    if not data:
-                        break
-                    counter += len(data)
-                    output_file.write(data)
-
-                    # We perform animation by overwriting the elements.
-                    weights_warning.warning(f"Downloading {file_path}... ({counter / MEGABYTES:.2f}/{length / MEGABYTES:.2f} MB)")
-                    progress_bar.progress(min(counter / length, 1.0))
+        with st.spinner(f"正在下載 {MODEL_OPTIONS[model_path]['name']} 模型..."):
+            model_url = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{model_path}"
+            # 使用urllib下載
+            import urllib.request
+            urllib.request.urlretrieve(
+                model_url,
+                model_path,
+                reporthook=lambda count, block_size, total_size: st.progress(
+                    min(count * block_size / total_size, 1.0)
+                )
+            )
+        return os.path.exists(model_path)
     except Exception as e:
-        st.error(f"Download failed: {str(e)}")
-        print(e)
-    # Finally, we remove these visual elements by calling .empty().
-    finally:
-        if weights_warning is not None:
-            weights_warning.empty()
-        if progress_bar is not None:
-            progress_bar.empty()
+        st.error(f"模型下载失败: {str(e)}")
+        return False
 
-# This is the main app app itself, which appears when the user selects "Run the app".
-def run_the_app():
-    class Config():
-        # 适配 YOLOv8：移除v4特有参数（tiny/phi），保留核心配置
-        def __init__(self, weights='yolov8n.pt', shape=640, nms_iou=0.3, confidence=0.5):
-            self.weights = weights
-            self.shape = shape  # YOLOv8默认输入尺寸640
-            self.confidence = confidence
-            self.nms_iou = nms_iou
+# 加載YOLO模型
+@st.cache_resource
+def load_model(model_path, conf_threshold, nms_threshold):
+    if not download_model(model_path):
+        return None
 
-    # set title of app
-    st.markdown('<h1 align="center">✌ Gesture Detection (YOLOv8)</h1>',
-                unsafe_allow_html=True)
-    st.sidebar.markdown("# Gesture Detection on?")
-    activities = ["Example", "Image", "Camera", "FPS", "Heatmap", "Real Time", "Video"]
-    choice = st.sidebar.selectbox("Choose among the given options:", activities)
-
-    # -------------------------- 适配 YOLOv8 模型选择 --------------------------
-    st.sidebar.markdown("# YOLOv8 Model Selection")
-    # 提供v8模型选择（按尺寸从小到大）
-    model_type = st.sidebar.selectbox(
-        "Model Size (Speed ↓ Precision ↑)",
-        [
-            ("yolov8n.pt", "Nano (~6.26 MB, Fastest)"),
-            ("yolov8s.pt", "Small (~24.56 MB, Balance)"),
-            ("yolov8m.pt", "Medium (~56.83 MB, High Precision)"),
-            ("yolov8l.pt", "Large (~98.41 MB, Higher Precision)"),
-            ("yolov8x.pt", "X-Large (~163.71 MB, Highest Precision)")
-        ],
-        format_func=lambda x: x[1]
-    )
-    selected_weights = model_type[0]
-
-    # YOLOv8输入尺寸选择（官方推荐640/1280）
-    shape = st.sidebar.selectbox("Input Image Size", [640, 1280])
-    conf, nms = object_detector_ui()
-
-    @st.cache_resource  # 替换st.cache为st.cache_resource（适配模型缓存）
-    def get_yolo(weights, conf, nms, shape=640):
-        # YOLOv8加载方式（直接调用ultralytics.YOLO）
-        yolo = YOLO(weights)
-        # 设置模型参数
-        yolo.model.conf = conf  # 置信度阈值
-        yolo.model.iou = nms    # NMS IoU阈值
-        return yolo
-
-    # 加载YOLOv8模型
-    yolo = get_yolo(selected_weights, conf, nms, shape)
-    st.write(f"YOLOv8 Model Loaded: {selected_weights} (Input Size: {shape})")
-
-    if choice == 'Image':
-        detect_image(yolo)
-    elif choice == 'Camera':
-        detect_camera(yolo)
-    elif choice == 'FPS':
-        detect_fps(yolo, shape)
-    elif choice == "Heatmap":
-        detect_heatmap(yolo)
-    elif choice == "Example":
-        detect_example(yolo)
-    elif choice == "Real Time":
-        detect_realtime(yolo, shape)
-    elif choice == "Video":
-        detect_video(yolo, shape)
-
-# This sidebar UI lets the user select parameters for the YOLO object detector.
-def object_detector_ui():
-    st.sidebar.markdown("# Model Parameters")
-    confidence_threshold = st.sidebar.slider("Confidence threshold", 0.0, 1.0, 0.5, 0.01)
-    overlap_threshold = st.sidebar.slider("NMS Overlap threshold", 0.0, 1.0, 0.3, 0.01)
-    return confidence_threshold, overlap_threshold
-
-# -------------------------- 适配 YOLOv8 检测逻辑 --------------------------
-def predict(image, yolo, shape=640):
-    """Return predictions using YOLOv8."""
     try:
-        # YOLOv8检测：指定输入尺寸，返回结果
-        results = yolo.predict(image, imgsz=shape, conf=yolo.model.conf, iou=yolo.model.iou)
-        # 绘制检测结果
-        r_image = results[0].plot()  # 直接获取绘制后的图像（BGR格式）
-        # 转换为RGB格式用于Streamlit显示
-        r_image = cv2.cvtColor(r_image, cv2.COLOR_BGR2RGB)
-        st.image(r_image, caption='Detected Image.', use_column_width=True)
+        model = YOLO(model_path)
+        model.conf = conf_threshold  # 置信度阈值
+        model.iou = nms_threshold    # NMS阈值
+        return model
     except Exception as e:
-        st.error(f"Detection failed: {str(e)}")
-        print(e)
+        st.error(f"模型加载失败: {str(e)}")
+        return None
 
-def fps(image, yolo, shape=640):
-    """Calculate FPS using YOLOv8."""
-    test_interval = 10  # 减少测试次数，加快速度
-    start_time = time.time()
-    # 循环检测计算FPS
-    for _ in range(test_interval):
-        yolo.predict(image, imgsz=shape, conf=yolo.model.conf, iou=yolo.model.iou)
-    end_time = time.time()
-    tact_time = (end_time - start_time) / test_interval
-    fps = 1 / tact_time
-    st.write(f"Average inference time: {tact_time:.4f} seconds")
-    st.write(f"FPS: {fps:.2f} (@batch_size 1)")
-    return tact_time
+# 图像检测函数
+def detect_image(model, image, input_shape):
+    if model is None:
+        return None
 
-# -------------------------- 以下函数仅适配YOLOv8调用逻辑，核心功能不变 --------------------------
-def detect_image(yolo):
-    file_up = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-    classes = ["up", "down", "left", "right", "front", "back", "clockwise", "anticlockwise"]
-    st.sidebar.markdown("See the model performance and play with it")
-    if file_up is not None:
-        with st.spinner(text='Preparing Image'):
-            image = Image.open(file_up)
-            st.image(image, caption='Uploaded Image.', use_column_width=True)
-            st.balloons()
-            detect = st.button("Start Detection")
-            if detect:
-                st.write("Processing...")
-                predict(image, yolo)
-                st.balloons()
+    try:
+        results = model.predict(image, imgsz=input_shape)
+        return results[0].plot()  # 返回绘制了检测结果的图像
+    except Exception as e:
+        st.error(f"检测失败: {str(e)}")
+        return None
 
-def detect_camera(yolo):
-    picture = st.camera_input("Take a picture")
-    if picture:
-        filters_to_funcs = {
-            "No filter": predict,
-            "Heatmap": heatmap,
-            "FPS": fps,
-        }
-        filters = st.selectbox("Apply a filter!", filters_to_funcs.keys())
-        image = Image.open(picture)
-        with st.spinner(text='Preparing Image'):
-            filters_to_funcs[filters](image, yolo)
-            st.balloons()
+# 视频处理类
+class VideoProcessor:
+    def __init__(self, model, input_shape):
+        self.model = model
+        self.input_shape = input_shape
+        self.conf_threshold = model.conf if model else 0.5
 
-def detect_fps(yolo, shape=640):
-    file_up = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-    st.sidebar.markdown("Test model FPS")
-    if file_up is not None:
-        image = Image.open(file_up)
-        st.image(image, caption='Uploaded Image.', use_column_width=True)
-        st.balloons()
-        detect = st.button("Start FPS Test")
-        if detect:
-            with st.spinner(text='Calculating FPS...'):
-                fps(image, yolo, shape)
-                st.balloons()
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
 
-def heatmap(image, yolo):
-    """简化热力图功能（YOLOv8原生不支持，用检测结果替代）"""
-    st.warning("YOLOv8 does not support heatmap natively, showing detection result instead")
-    predict(image, yolo)
+        if self.model:
+            results = self.model.predict(img, imgsz=self.input_shape)
+            img = results[0].plot()
 
-def detect_heatmap(yolo):
-    file_up = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-    st.sidebar.markdown("Generate Heatmap (Simulation)")
-    if file_up is not None:
-        image = Image.open(file_up)
-        st.image(image, caption='Uploaded Image.', use_column_width=True)
-        st.balloons()
-        detect = st.button("Generate Heatmap")
-        if detect:
-            with st.spinner(text='Generating Heatmap...'):
-                heatmap(image, yolo)
-                st.balloons()
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-def detect_example(yolo):
-    st.sidebar.title("Choose an Example Image")
-    img_dir = './img'
-    if os.path.exists(img_dir):
-        images = os.listdir(img_dir)
-        images = [img for img in images if img.endswith(('jpg', 'png', 'jpeg'))]
-        if images:
-            images.sort()
-            selected_img = st.sidebar.selectbox("Image Name", images)
-            image = Image.open(os.path.join(img_dir, selected_img))
-            st.image(image, caption='Selected Example.', use_column_width=True)
-            st.balloons()
-            detect = st.button("Start Detection")
-            if detect:
-                st.write("Processing...")
-                predict(image, yolo)
-                st.balloons()
-        else:
-            st.warning("No example images found in ./img directory")
-    else:
-        st.warning("./img directory not found")
+# 计算FPS
+def calculate_fps(model, input_shape):
+    if model is None:
+        return 0.0
 
-def detect_realtime(yolo, shape=640):
-    class VideoProcessor:
-        def recv(self, frame):
-            img = frame.to_ndarray(format="bgr24")
-            # YOLOv8实时检测
-            results = yolo.predict(img, imgsz=shape, conf=yolo.model.conf, iou=yolo.model.iou, verbose=False)
-            r_image = results[0].plot()  # 绘制结果
-            return av.VideoFrame.from_ndarray(r_image, format="bgr24")
+    try:
+        test_img = np.zeros((input_shape, input_shape, 3), dtype=np.uint8)
+        start_time = time.time()
+        for _ in range(10):
+            model.predict(test_img, imgsz=input_shape)
+        elapsed = time.time() - start_time
+        return 10 / elapsed
+    except Exception as e:
+        st.error(f"FPS计算失败: {str(e)}")
+        return 0.0
 
-    webrtc_ctx = webrtc_streamer(
-        key="gesture-detection",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTC_CONFIGURATION,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=False,
-        video_processor_factory=VideoProcessor
-    )
+# 主应用函数
+def main():
+    # 页面标题
+    st.title("✌️ 手势检测平台")
+    st.markdown("实时检测手势动作，支持图像上传、摄像头实时检测等多种模式")
 
-import cv2
-import time
-def detect_video(yolo, shape=640):
-    file_up = st.file_uploader("Upload a video", type=["mp4"])
-    if file_up is not None:
-        video_path = 'temp_video.mp4'
-        st.video(file_up)
-        with open(video_path, 'wb') as f:
-            f.write(file_up.read())
-        detect = st.button("Start Video Detection")
+    # 侧边栏配置
+    with st.sidebar:
+        st.header("设置")
 
-        if detect:
-            video_save_path = 'processed_video.mp4'
-            capture = cv2.VideoCapture(video_path)
-            video_fps = st.slider("Output Video FPS", 5, 30, int(capture.get(cv2.CAP_PROP_FPS)), 1)
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 修正编码器，适配
+        # 选择应用模式
+        app_mode = st.selectbox(
+            "应用模式",
+            ["图像检测", "实时摄像头", "视频上传", "性能测试", "开始"]
+        )
+
+        # 模型设置
+        st.subheader("模型设置")
+        model_name = st.selectbox(
+            "选择模型",
+            list(MODEL_OPTIONS.keys()),
+            format_func=lambda x: f"{MODEL_OPTIONS[x]['name']} ({x})"
+        )
+
+        input_shape = st.selectbox(
+            "输入图像尺寸",
+            INPUT_SHAPES,
+            format_func=lambda x: f"{x}x{x}"
+        )
+
+        conf_threshold = st.slider(
+            "置信度阈值",
+            0.0, 1.0, 0.5, 0.01
+        )
+
+        nms_threshold = st.slider(
+            "NMS阈值",
+            0.0, 1.0, 0.3, 0.01
+        )
+
+        # 加载模型按鈕
+        if st.button("加载模型"):
+            with st.spinner("正在加载模型..."):
+                st.session_state["model"] = load_model(
+                    model_name,
+                    conf_threshold,
+                    nms_threshold
+                )
+                if st.session_state.get("model"):
+                    st.success(f"模型 {MODEL_OPTIONS[model_name]['name']} 加载成功!")
+
+        # 展示手势识别
+        st.subheader("支持的手势")
+        st.write(", ".join(GESTURE_CLASSES))
+
+    # 确保模型已加载
+    model = st.session_state.get("model")
+    if model is None and app_mode not in ["关于"]:
+        st.warning("请先在侧边栏选择模型并点击'加载模型'按钮")
+        return
+
+    # 根据选择的模式展示对应内容
+    if app_mode == "图像检测":
+        st.subheader("图像检测")
+        uploaded_file = st.file_uploader("上传图像", type=["jpg", "jpeg", "png"])
+
+        if uploaded_file is not None:
+            # 展示原始图像
+            image = Image.open(uploaded_file)
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.info("原始图像")
+                st.image(image, use_column_width=True)
+
+            # 检测图像
+            if st.button("开始检测"):
+                with st.spinner("正在檢測..."):
+                    # 转换图像格式
+                    img_array = np.array(image)
+                    result_img = detect_image(model, img_array, input_shape)
+
+                    with col2:
+                        st.success("检测结果")
+                        if result_img is not None:
+                            st.image(result_img, use_column_width=True)
+
+    elif app_mode == "实时摄像头":
+        st.subheader("实时摄像头检测")
+        st.info("点击下方按钮启动摄像头，请确保浏览器已授予摄像头权限")
+
+        if model:
+            webrtc_streamer(
+                key="gesture-detection",
+                mode=WebRtcMode.SENDRECV,
+                rtc_configuration=RTC_CONFIGURATION,
+                video_processor_factory=lambda: VideoProcessor(model, input_shape),
+                media_stream_constraints={"video": True, "audio": False},
+                async_processing=True,
+            )
+
+    elif app_mode == "视频上传":
+        st.subheader("视频上传检测")
+        st.warning("注意：视频检测可能需要较长时间，取决于视频长度和模型性能")
+
+        uploaded_video = st.file_uploader("上传视频", type=["mp4", "mov", "avi"])
+
+        if uploaded_video is not None:
+            # 保存上传的视频
+            video_path = "temp_video.mp4"
+            with open(video_path, "wb") as f:
+                f.write(uploaded_video.read())
+
+            # 展示视频信息
+            cap = cv2.VideoCapture(video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+
+            st.info(f"视频信息: {fps:.1f} FPS, {frame_count} 帧, 约 {duration:.1f} 秒")
+            cap.release()
+
+            if st.button("开始处理视频"):
+                with st.spinner("正在处理视频..."):
+                    # 处理视频
+                    cap = cv2.VideoCapture(video_path)
+                    output_frames = []
+
+                    # 展示处理速度
+                    progress_bar = st.progress(0)
+                    frame_idx = 0
+
+                    while cap.isOpened():
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+
+                        # 检测每一帧
+                        result_frame = detect_image(model, frame, input_shape)
+                        if result_frame is not None:
+                            output_frames.append(result_frame)
+
+                        # 更新速度
+                        frame_idx += 1
+                        progress_bar.progress(min(frame_idx / frame_count, 1.0))
+
+                    cap.release()
+                    progress_bar.empty()
+
+                    st.success("视频处理完成!")
+                    # 这里可以添加视频保存和演示代码
+
+    elif app_mode == "性能测试":
+        st.subheader("性能测试")
+        st.info("测试模型在当前设备上的推理速度")
+
+        if st.button("开始测试FPS"):
+            with st.spinner("正在测试..."):
+                fps = calculate_fps(model, input_shape)
+                st.success(f"平均FPS: {fps:.2f} 帧/秒")
+
+                # 展示性能评估
+                if fps < 10:
+                    st.warning("性能较低，建议使用更小的模型或降低输入尺寸")
+                elif fps < 25:
+                    st.info("性能中等，可以满足基本实时需求")
+                else:
+                    st.success("性能优异，适合实时检测")
+
+    elif app_mode == "关于":
+        st.subheader("关于本应用")
+        st.markdown("""
+        这是一个基于YOLOv8的手势检测Web应用，支持多种手势的实时检测。
+        
+        ### 支持的手势
+        - 上下左右 (up, down, left, right)
+        - 前后 (front, back)
+        - 顺时针/逆时针旋转 (clockwise, anticlockwise)
+        
+        ### 使用说明
+        1. 在侧边栏选择合适的模型和参数
+        2. 点击“加载模型”按钮加载模型
+        3. 选择相应的应用模式进行检测
+        
+        ### 注意事项
+        - 较大的模型精度更高但速度更慢
+        - 较大的输入尺寸可能提高精度但降低速度
+        - 实时检测需要较高的FPS (建议至少15 FPS)
+        """)
+
+if __name__ == "__main__":
+    main()
