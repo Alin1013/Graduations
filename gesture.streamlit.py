@@ -9,7 +9,9 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 from ultralytics import YOLO
-
+import ssl
+# 全局禁用SSL证书验证
+ssl._create_default_https_context = ssl._create_unverified_context
 # 页面配置
 st.set_page_config(
     page_title="手势检测平台",
@@ -37,29 +39,42 @@ MODEL_OPTIONS = {
 INPUT_SHAPES = [640, 1280]
 GESTURE_CLASSES = ["up", "down", "left", "right", "front", "back", "clockwise", "anticlockwise"]
 
-# 下载模型权重
+# 下载模型权重 - 仅使用一个进度条
 def download_model(model_path):
     if os.path.exists(model_path) and os.path.getsize(model_path) == MODEL_OPTIONS[model_path]["size"]:
         return True
 
     try:
-        with st.spinner(f"正在下載 {MODEL_OPTIONS[model_path]['name']} 模型..."):
-            model_url = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{model_path}"
-            # 使用urllib下載
-            import urllib.request
-            urllib.request.urlretrieve(
-                model_url,
-                model_path,
-                reporthook=lambda count, block_size, total_size: st.progress(
-                    min(count * block_size / total_size, 1.0)
-                )
-            )
+        # 创建进度条
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        status_text.text(f"开始下载 {MODEL_OPTIONS[model_path]['name']} 模型...")
+
+        model_url = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{model_path}"
+
+        # 自定义下载进度回调函数
+        def update_progress(count, block_size, total_size):
+            progress = min(count * block_size / total_size, 1.0)
+            progress_bar.progress(progress)
+            # 不显示额外的文字信息，只保留进度条
+
+        # 使用urllib下载
+        import urllib.request
+        urllib.request.urlretrieve(
+            model_url,
+            model_path,
+            reporthook=update_progress
+        )
+
+        # 下载完成后清理进度条
+        progress_bar.empty()
+        status_text.empty()
         return os.path.exists(model_path)
     except Exception as e:
         st.error(f"模型下载失败: {str(e)}")
         return False
 
-# 加載YOLO模型
+# 加载YOLO模型
 @st.cache_resource
 def load_model(model_path, conf_threshold, nms_threshold):
     if not download_model(model_path):
@@ -131,7 +146,7 @@ def main():
         # 选择应用模式
         app_mode = st.selectbox(
             "应用模式",
-            ["图像检测", "实时摄像头", "视频上传", "性能测试", "开始"]
+            ["图像检测", "实时摄像头", "视频上传", "性能测试", "关于"]
         )
 
         # 模型设置
@@ -158,7 +173,7 @@ def main():
             0.0, 1.0, 0.3, 0.01
         )
 
-        # 加载模型按鈕
+        # 加载模型按钮
         if st.button("加载模型"):
             with st.spinner("正在加载模型..."):
                 st.session_state["model"] = load_model(
@@ -246,7 +261,7 @@ def main():
                     cap = cv2.VideoCapture(video_path)
                     output_frames = []
 
-                    # 展示处理速度
+                    # 展示处理进度
                     progress_bar = st.progress(0)
                     frame_idx = 0
 
@@ -260,7 +275,7 @@ def main():
                         if result_frame is not None:
                             output_frames.append(result_frame)
 
-                        # 更新速度
+                        # 更新进度
                         frame_idx += 1
                         progress_bar.progress(min(frame_idx / frame_count, 1.0))
 
@@ -290,7 +305,7 @@ def main():
     elif app_mode == "关于":
         st.subheader("关于本应用")
         st.markdown("""
-        这是一个基于YOLOv8的手势检测Web应用，支持多种手势的实时检测。
+        这是一个基于YOLOv8的手势检测Web应用，可以识别小物体目标检测，同时支持多种手势的实时检测。
         
         ### 支持的手势
         - 上下左右 (up, down, left, right)
