@@ -26,9 +26,22 @@ if __name__ == "__main__":
     parser.add_argument('--shape', type=int, default=640, help='输入图像的shape（YOLOv8默认640）')
     parser.add_argument('--confidence', type=float, default=0.5, help='预测框置信度阈值')
     parser.add_argument('--nms_iou', type=float, default=0.3, help='非极大抑制IoU阈值')
+    # 添加自定义权重参数
+    parser.add_argument('--custom_weights', type=str, default=None,
+                        help='自定义权重路径，优先级高于--weights')
     # 添加数据集配置文件路径（替代原get_config）
     parser.add_argument('--data', type=str, default='model_data/gesture.yaml', help='数据集配置文件路径')
+
+    # 先解析参数
     opt = parser.parse_args()
+
+    # 处理自定义权重（必须在解析参数之后）
+    if opt.custom_weights and os.path.exists(opt.custom_weights):
+        opt.weights = opt.custom_weights
+        print(f"使用自定义权重: {opt.weights}")
+    elif opt.custom_weights and not os.path.exists(opt.custom_weights):
+        print(f"警告: 自定义权重路径不存在 {opt.custom_weights}，将使用默认权重 {opt.weights}")
+
     print(opt)
 
     # 从配置文件加载类别信息（YOLOv8标准yaml格式）
