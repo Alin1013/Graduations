@@ -15,11 +15,6 @@ Thumbs.db
 ehthumbs.db
 
 # 虚拟环境
-venv/
-env/
-ENV/
-.env
-.venv
 *.egg-info/
 dist/
 build/
@@ -40,17 +35,9 @@ wheels/
 
 # 深度学习相关
 # 训练日志和权重
-logs/
 *.pth
 *.pt
 *.ckpt
-runs/
-
-# 数据集相关（如果不打算上传原始数据）
-VOCdevkit/VOC2026/JPEGImages/
-VOCdevkit/VOC2026/Annotations/
-!VOCdevkit/VOC2026/Annotations/README.md  # 保留说明文件
-!VOCdevkit/VOC2026/ImageSets/Main/README.md  # 保留说明文件
 
 # IDE配置
 .idea/
