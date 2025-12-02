@@ -4,8 +4,8 @@ val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages    # 验证集�
 labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/Annotations  # 标签文件路径（存放YOLO格式.txt）
 
 # 类别配置
-nc: 8
-names: ["up","down","left","right","front","back","clockwise","anticlockwise"]
+nc: 19
+names: ["one","two_up","two_up_inverted","three","three2","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock","no_gesture"]
 
 # 其他参数保持不变
 confidence: 0.5

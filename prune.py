@@ -1,3 +1,4 @@
+#生成剪枝后的模型
 import torch
 import torch.nn.utils.prune as prune
 from nets.yolov8 import YOLOv8
@@ -20,10 +21,10 @@ def prune_model(model, pruning_ratio=0.3):
 if __name__ == "__main__":
     # 加载预训练模型
     model = YOLOv8(num_classes=8)
-    model.load_state_dict(torch.load("logs/best_model.pt"))  # 加载训练好的模型
+    model.load_state_dict(torch.load("temp/best_model.pt"))  # 加载训练好的模型
 
     # 剪枝
     pruned_model = prune_model(model, pruning_ratio=0.3)
 
     # 保存剪枝后的模型
-    torch.save(pruned_model.state_dict(), "logs/pruned_model.pt")
+    torch.save(pruned_model.state_dict(), "temp/pruned_model.pt")

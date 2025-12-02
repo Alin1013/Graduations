@@ -32,7 +32,7 @@ train_percent       = 0.9
 #-------------------------------------------------------#
 VOCdevkit_path  = 'VOCdevkit'
 
-VOCdevkit_sets  = [('2007', 'train'), ('2007', 'val')]
+VOCdevkit_sets  = [('2026', 'train'), ('2026', 'val')]
 # classes, _      = get_classes(classes_path)
 config = get_config()
 classes = config['classes']

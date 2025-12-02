@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # FPS测试相关参数
     test_interval = 100
-    fps_image_path = "img/up.jpg"
+    fps_image_path = "img/call.jpg"
 
     # 目录检测相关参数
     dir_origin_path = "img/"
