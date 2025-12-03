@@ -1,4 +1,0 @@
-/Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages/4.jpg 44,45,264,256,1
-/Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages/5.jpg 31,19,152,167,1
-/Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages/2.jpg 44,20,259,264,1
-/Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages/1.jpg 21,7,174,210,1

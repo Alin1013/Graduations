@@ -34,9 +34,6 @@ wheels/
 *.egg
 
 # 深度学习相关
-# 训练日志和权重
-*.pth
-*.pt
 *.ckpt
 
 # IDE配置

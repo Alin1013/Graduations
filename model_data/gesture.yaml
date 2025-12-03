@@ -1,14 +1,6 @@
-# 数据集路径配置（必填）
-train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages  # 训练集图片路径
-val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages    # 验证集图片路径
-labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/Annotations  # 标签文件路径（存放YOLO格式.txt）
-
-# 类别配置
-nc: 19
-names: ["one","two_up","two_up_inverted","three","three2","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock","no_gesture"]
-
-# 其他参数保持不变
-confidence: 0.5
-nms_iou: 0.3
-letterbox_image: False
-num_workers: 0  # Mac系统建议设为0，避免多线程问题
+# 仅保留 Ultralytics 必需的 5 个字段，其他全部删除！
+train: /Users/alin/Graduation_Project/yolo_train.txt
+val: /Users/alin/Graduation_Project/yolo_val.txt
+labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/labels
+nc: 2
+names: ["call", "no_gesture"]

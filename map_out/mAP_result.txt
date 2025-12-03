@@ -1,0 +1,5 @@
+mAP@0.5 = 0.000
+类别：['call', 'no_gesture']
+验证集图像数：20
+模型权重：runs/detect/gesture_final_train_final/weights/best.pt
+输入尺寸：640

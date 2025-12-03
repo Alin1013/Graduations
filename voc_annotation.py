@@ -2,109 +2,133 @@ import os
 import random
 import xml.etree.ElementTree as ET
 from get_yaml import get_config
-from utils.utils import get_classes
+#划分验证集和测试集
+# --------------------------------------------------------------------------------------------------------------------------------#
+#   配置项（已根据实际情况优化）
+# --------------------------------------------------------------------------------------------------------------------------------#
+annotation_mode = 0
+trainval_percent = 1.0
+train_percent = 0.9
+VOCdevkit_path = 'VOCdevkit'
+VOCdevkit_sets = [('2026', 'train'), ('2026', 'val')]
 
-#--------------------------------------------------------------------------------------------------------------------------------#
-#   annotation_mode用于指定该文件运行时计算的内容
-#   annotation_mode为0代表整个标签处理过程，包括获得VOCdevkit/VOC2026/ImageSets里面的txt以及训练用的2026_train.txt、2026_val.txt
-#   annotation_mode为1代表获得VOCdevkit/VOC2026/ImageSets里面的txt
-#   annotation_mode为2代表获得训练用的2026_train.txt、2026_val.txt
-#--------------------------------------------------------------------------------------------------------------------------------#
-annotation_mode     = 0
-#-------------------------------------------------------------------#
-#   必须要修改，用于生成2007_train.txt、2007_val.txt的目标信息
-#   与训练和预测所用的classes_path一致即可
-#   如果生成的2007_train.txt里面没有目标信息
-#   那么就是因为classes没有设定正确
-#   仅在annotation_mode为0和2的时候有效
-#-------------------------------------------------------------------#
-# classes_path        = 'model_data/gesture_classes.txt'
-#--------------------------------------------------------------------------------------------------------------------------------#
-#   trainval_percent用于指定(训练集+验证集)与测试集的比例，默认情况下 (训练集+验证集):测试集 = 9:1
-#   train_percent用于指定(训练集+验证集)中训练集与验证集的比例，默认情况下 训练集:验证集 = 9:1  
-#   仅在annotation_mode为0和1的时候有效
-#--------------------------------------------------------------------------------------------------------------------------------#
-trainval_percent    = 1
-train_percent       = 0.9
-#-------------------------------------------------------#
-#   指向VOC数据集所在的文件夹
-#   默认指向根目录下的VOC数据集
-#-------------------------------------------------------#
-VOCdevkit_path  = 'VOCdevkit'
+# 图像实际存储目录（已确认正确）
+IMG_DIR = os.path.join(VOCdevkit_path, 'VOC2026', 'JPEGImages')
+# 支持的图像后缀 + 自动适配 _000 后缀
+SUPPORTED_IMG_FORMATS = ('.jpg', '.jpeg', '.png')
+IMAGE_SUFFIX_ADDON = '_000'  # 图像文件名比image_id多的后缀（关键适配）
 
-VOCdevkit_sets  = [('2026', 'train'), ('2026', 'val')]
-# classes, _      = get_classes(classes_path)
+# 从gesture.yaml读取类别配置
 config = get_config()
-classes = config['classes']
+classes = config['names']
+nc = config['nc']
+print(f"✅ 从配置文件加载类别：{classes}（共{nc}类）")
+print(f"✅ 图像目录：{IMG_DIR}")
+print(f"✅ 支持后缀：{SUPPORTED_IMG_FORMATS}")
+print(f"✅ 图像文件名附加后缀：{IMAGE_SUFFIX_ADDON}")
+
+
 def convert_annotation(year, image_id, list_file):
-    in_file = open(os.path.join(VOCdevkit_path, 'VOC%s/Annotations/%s.xml'%(year, image_id)), encoding='utf-8')
-    tree=ET.parse(in_file)
+    """过滤有效标签"""
+    in_file = open(os.path.join(VOCdevkit_path, 'VOC%s/Annotations/%s.xml' % (year, image_id)), encoding='utf-8')
+    tree = ET.parse(in_file)
     root = tree.getroot()
+    has_valid_obj = False
 
     for obj in root.iter('object'):
-        difficult = 0 
-        if obj.find('difficult')!=None:
+        difficult = 0
+        if obj.find('difficult') != None:
             difficult = obj.find('difficult').text
         cls = obj.find('name').text
-        if cls not in classes or int(difficult)==1:
-            continue
-        cls_id = classes.index(cls)
-        xmlbox = obj.find('bndbox')
-        b = (int(float(xmlbox.find('xmin').text)), int(float(xmlbox.find('ymin').text)), int(float(xmlbox.find('xmax').text)), int(float(xmlbox.find('ymax').text)))
-        list_file.write(" " + ",".join([str(a) for a in b]) + ',' + str(cls_id))
-        
+        if cls in classes and int(difficult) == 0:
+            has_valid_obj = True
+            break
+
+    return has_valid_obj
+
+
+def get_real_img_path(image_id):
+    """查找实际图像路径（适配 image_id + _000 + 后缀）"""
+    # 先尝试带 _000 后缀的路径（主要适配你的图像）
+    for ext in SUPPORTED_IMG_FORMATS:
+        img_path = os.path.join(IMG_DIR, f"{image_id}{IMAGE_SUFFIX_ADDON}{ext}")
+        if os.path.exists(img_path):
+            return os.path.abspath(img_path)
+    # 再尝试不带 _000 的路径（兼容其他情况）
+    for ext in SUPPORTED_IMG_FORMATS:
+        img_path = os.path.join(IMG_DIR, f"{image_id}{ext}")
+        if os.path.exists(img_path):
+            return os.path.abspath(img_path)
+    # 都没找到返回None
+    return None
+
+
 if __name__ == "__main__":
     random.seed(0)
-    if annotation_mode == 0 or annotation_mode == 1:
-        print("Generate txt in ImageSets.")
-        xmlfilepath     = os.path.join(VOCdevkit_path, 'VOC2026/Annotations')
-        saveBasePath    = os.path.join(VOCdevkit_path, 'VOC2026/ImageSets/Main')
-        temp_xml        = os.listdir(xmlfilepath)
-        total_xml       = []
-        for xml in temp_xml:
-            if xml.endswith(".xml"):
-                total_xml.append(xml)
 
-        num     = len(total_xml)  
-        list    = range(num)  
-        tv      = int(num*trainval_percent)  
-        tr      = int(tv*train_percent)  
-        trainval= random.sample(list,tv)  
-        train   = random.sample(trainval,tr)  
-        
-        print("train and val size",tv)
-        print("train size",tr)
-        ftrainval   = open(os.path.join(saveBasePath,'trainval.txt'), 'w')  
-        ftest       = open(os.path.join(saveBasePath,'test.txt'), 'w')  
-        ftrain      = open(os.path.join(saveBasePath,'train.txt'), 'w')  
-        fval        = open(os.path.join(saveBasePath,'val.txt'), 'w')  
-        
-        for i in list:  
-            name=total_xml[i][:-4]+'\n'  
-            if i in trainval:  
-                ftrainval.write(name)  
-                if i in train:  
-                    ftrain.write(name)  
-                else:  
-                    fval.write(name)  
-            else:  
-                ftest.write(name)  
-        
-        ftrainval.close()  
-        ftrain.close()  
-        fval.close()  
-        ftest.close()
+    # 步骤1：生成ImageSets中的划分文件
+    if annotation_mode == 0 or annotation_mode == 1:
+        print("\nGenerate txt in ImageSets.")
+        xmlfilepath = os.path.join(VOCdevkit_path, 'VOC2026/Annotations')
+        saveBasePath = os.path.join(VOCdevkit_path, 'VOC2026/ImageSets/Main')
+        total_xml = [xml for xml in os.listdir(xmlfilepath) if xml.endswith(".xml")]
+
+        num = len(total_xml)
+        tv = int(num * trainval_percent)
+        tr = int(tv * train_percent)
+        trainval = random.sample(range(num), tv)
+        train = random.sample(trainval, tr)
+
+        print(f"train and val size: {tv}")
+        print(f"train size: {tr}")
+        print(f"val size: {tv - tr}")
+
+        # 写入划分文件
+        with open(os.path.join(saveBasePath, 'trainval.txt'), 'w') as ftrainval, \
+                open(os.path.join(saveBasePath, 'test.txt'), 'w') as ftest, \
+                open(os.path.join(saveBasePath, 'train.txt'), 'w') as ftrain, \
+                open(os.path.join(saveBasePath, 'val.txt'), 'w') as fval:
+            for i in range(num):
+                name = total_xml[i][:-4] + '\n'  # 去除.xml后缀，得到image_id
+                if i in trainval:
+                    ftrainval.write(name)
+                    if i in train:
+                        ftrain.write(name)
+                    else:
+                        fval.write(name)
+                else:
+                    ftest.write(name)
+
         print("Generate txt in ImageSets done.")
 
+    # 步骤2：生成YOLOv8所需的纯图像路径列表（关键适配_000后缀）
     if annotation_mode == 0 or annotation_mode == 2:
-        print("Generate gesture_train.txt and 2026_val.txt for train.")
+        print("\nGenerate yolo_train.txt and yolo_val.txt for train.")
         for year, image_set in VOCdevkit_sets:
-            image_ids = open(os.path.join(VOCdevkit_path, 'VOC%s/ImageSets/Main/%s.txt'%(year, image_set)), encoding='utf-8').read().strip().split()
-            list_file = open('%s_%s.txt'%(year, image_set), 'w', encoding='utf-8')
-            for image_id in image_ids:
-                list_file.write('%s/VOC%s/JPEGImages/%s.jpg'%(os.path.abspath(VOCdevkit_path), year, image_id))
+            image_ids_path = os.path.join(VOCdevkit_path, 'VOC%s/ImageSets/Main/%s.txt' % (year, image_set))
+            image_ids = open(image_ids_path, encoding='utf-8').read().strip().split()
 
-                convert_annotation(year, image_id, list_file)
-                list_file.write('\n')
-            list_file.close()
-        print("Generate gesture_train.txt and gesture_val.txt for train done.")
+            output_file = f"yolo_{image_set}.txt"
+            valid_count = 0
+
+            with open(output_file, 'w', encoding='utf-8') as list_file:
+                for idx, image_id in enumerate(image_ids):
+                    img_path = get_real_img_path(image_id)
+
+                    if img_path:
+                        has_valid = convert_annotation(year, image_id, list_file)
+                        if has_valid:
+                            list_file.write(img_path + '\n')
+                            valid_count += 1
+                            # 每10个输出一次进度
+                            if (idx + 1) % 10 == 0:
+                                print(f"🔍 已处理 {idx + 1}/{len(image_ids)} 个图像，有效数：{valid_count}")
+                        else:
+                            print(f"⚠️  图像{image_id}{IMAGE_SUFFIX_ADDON}有文件但无有效标签，已跳过")
+                    else:
+                        print(f"❌ 未找到图像{image_id}（尝试了 {image_id}{IMAGE_SUFFIX_ADDON}{SUPPORTED_IMG_FORMATS}）")
+
+            print(f"\n✅ {output_file} 生成完成！")
+            print(f"📊 统计：总图像数 {len(image_ids)}，有效图像数 {valid_count}")
+
+        print("\nGenerate yolo_train.txt and yolo_val.txt for train done.")

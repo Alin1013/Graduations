@@ -1,1 +1,0 @@
-/Users/alin/Graduation_Project/VOCdevkit/VOC2007/JPEGImages/3.jpg 30,59,261,297,1

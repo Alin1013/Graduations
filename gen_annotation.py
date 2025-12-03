@@ -1,3 +1,4 @@
+#VOC 格式 XML 标注文件生成工具
 from lxml import etree
  
 class GEN_Annotations:
