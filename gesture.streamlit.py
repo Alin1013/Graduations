@@ -30,14 +30,21 @@ RTC_CONFIGURATION = RTCConfiguration({
     }]
 })
 
-# YOLOv8模型配置（包含官方模型和自定义权重选项）
+# YOLOv8模型配置（包含本地模型路径和自定义权重选项）
+# 请在这里修改为你的本地模型文件路径
+LOCAL_MODEL_PATHS = {
+    "yolov8n.pt": "/Users/alin/Graduation_Project/yolov8n.pt",  # 替换为实际本地路径
+    "yolov8s.pt": "/Users/alin/Graduation_Project/yolov8s.pt",  # 替换为实际本地路径
+    "yolov8m.pt": "/Users/alin/Graduation_Project/yolov8m.pt",  # 替换为实际本地路径
+    "yolov8l.pt": "/Users/alin/Graduation_Project/yolov8l.pt",  # 替换为实际本地路径
+}
+
 MODEL_OPTIONS = {
-    "yolov8n.pt": {"name": "目标识别-Nano (最快)", "size": 6257408, "is_custom": False},
-    "yolov8s.pt": {"name": "目标识别-Small (平衡)", "size": 24555520, "is_custom": False},
-    "yolov8m.pt": {"name": "目标识别-Medium (高精度)", "size": 56834560, "is_custom": False},
-    "yolov8l.pt": {"name": "目标识别-Large (超高精度)", "size": 98406400, "is_custom": False},
-    "yolov8x.pt": {"name": "目标识别-X-Large (最高精度)", "size": 163714560, "is_custom": False},
-    "custom_weight": {"name": "手势识别-Best (自定义权重)", "size": 0, "is_custom": True}  # 自定义权重占位符
+    "yolov8n.pt": {"name": "目标识别-Nano (最快)", "local_path": LOCAL_MODEL_PATHS["yolov8n.pt"], "is_custom": False},
+    "yolov8s.pt": {"name": "目标识别-Small (平衡)", "local_path": LOCAL_MODEL_PATHS["yolov8s.pt"], "is_custom": False},
+    "yolov8m.pt": {"name": "目标识别-Medium (高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8m.pt"], "is_custom": False},
+    "yolov8l.pt": {"name": "目标识别-Large (超高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8l.pt"], "is_custom": False},
+    "custom_weight": {"name": "手势识别-Best (自定义权重)", "local_path": None, "is_custom": True}  # 自定义权重占位符
 }
 
 # 支持的输入尺寸和手势类别
@@ -48,47 +55,25 @@ GESTURE_CLASSES = ["one","two_up","two_up_inverted","three","three2","four","fis
 os.makedirs("temp", exist_ok=True)
 
 # -------------------------- 模型相关函数 --------------------------
-def download_model(model_path, model_info):
-    """下载官方YOLO模型，带进度条"""
-    # 检查文件是否已存在且大小匹配
-    if os.path.exists(model_path) and os.path.getsize(model_path) == model_info["size"]:
+def check_local_model(model_path):
+    """检查本地模型文件是否存在"""
+    if os.path.exists(model_path):
+        st.info(f"已检测到本地模型：{model_path}")
         return True
-
-    try:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        status_text.text(f"开始下载 {model_info['name']} 模型...")
-
-        # 官方模型下载地址
-        model_url = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{model_path}"
-
-        # 进度更新回调
-        def update_progress(count, block_size, total_size):
-            progress = min(count * block_size / total_size, 1.0)
-            progress_bar.progress(progress)
-
-        # 下载模型
-        import urllib.request
-        urllib.request.urlretrieve(model_url, model_path, reporthook=update_progress)
-
-        # 清理进度条
-        progress_bar.empty()
-        status_text.empty()
-        return os.path.exists(model_path)
-    except Exception as e:
-        st.error(f"模型下载失败: {str(e)}")
+    else:
+        st.error(f"本地模型文件不存在：{model_path}")
         return False
 
 @st.cache_resource(show_spinner="加载模型中...")
 def load_model(model_key, conf_threshold, nms_threshold, custom_weight_path=None):
-    """加载YOLO模型（支持官方模型和自定义权重）"""
+    """加载YOLO模型（使用本地模型路径）"""
     model_info = MODEL_OPTIONS[model_key]
 
-    # 加载官方模型
+    # 加载官方模型（本地路径）
     if not model_info["is_custom"]:
-        if not download_model(model_key, model_info):
+        model_path = model_info["local_path"]
+        if not check_local_model(model_path):
             return None
-        model_path = model_key
     # 加载自定义权重
     else:
         if not custom_weight_path or not os.path.exists(custom_weight_path):
@@ -318,13 +303,12 @@ def main():
 
         if model:
             webrtc_streamer(
-                key="gesture-realtime",
+                key="gesture-detection",
                 mode=WebRtcMode.SENDRECV,
                 rtc_configuration=RTC_CONFIGURATION,
                 video_processor_factory=lambda: VideoProcessor(model, input_shape),
                 media_stream_constraints={"video": True, "audio": False},
                 async_processing=True,
-                placeholder=st.image("https://via.placeholder.com/800x450?text=等待摄像头启动...", use_column_width=True)
             )
 
     elif app_mode == "视频上传":
