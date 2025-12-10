@@ -1,5 +1,12 @@
-mAP@0.5 = 0.000
-类别：['call', 'no_gesture']
-验证集图像数：20
-模型权重：runs/detect/gesture_final_train_final/weights/best.pt
+YOLOv8 mAP 评估结果
+==============================
+评估时间：Wed Dec 10 14:14:22 CST 2025
+模型权重：yolov8n.pt
 输入尺寸：640
+置信度阈值：0.001
+NMS IoU阈值：0.5
+mAP IoU阈值：0.5
+验证集图像数：70
+类别列表：['call', 'no_gesture', 'dislike']
+==============================
+mAP @ 0.5 = 0.000

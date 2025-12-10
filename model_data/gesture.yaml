@@ -1,6 +1,6 @@
 # 仅保留 Ultralytics 必需的 5 个字段，其他全部删除！
-train: /Users/alin/Graduation_Project/yolo_train.txt
-val: /Users/alin/Graduation_Project/yolo_val.txt
+train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/yolo_train.txt
+val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/yolo_val.txt
 labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/labels
-nc: 2
-names: ["call", "no_gesture"]
+nc: 3
+names: ["call", "no_gesture","dislike"]
