@@ -7,8 +7,8 @@ with open(native_yaml_path, "w", encoding="utf-8") as f:
     f.write("""# YOLOv8 原生数据集格式（图像和标签目录对应）
 train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/train  # 训练图像目录
 val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/val      # 验证图像目录
-nc: 2
-names: ["call", "no_gesture"]
+nc: 3
+names: ["call", "no_gesture","dislike"]
 # 标签目录默认与图像目录对应（images → labels），无需额外指定！
 """)
 
@@ -23,7 +23,7 @@ training_results = model.train(
     workers=0,
     imgsz=640,
     pretrained=True,
-    name='gesture_final_train_final',  # 最终训练目录
+    name='gesture_final_train',  # 最终训练目录
     cache=False,
     verbose=True,
     fliplr=0.5,

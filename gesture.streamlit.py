@@ -37,6 +37,7 @@ LOCAL_MODEL_PATHS = {
     "yolov8s.pt": "/Users/alin/Graduation_Project/yolov8s.pt",  # 替换为实际本地路径
     "yolov8m.pt": "/Users/alin/Graduation_Project/yolov8m.pt",  # 替换为实际本地路径
     "yolov8l.pt": "/Users/alin/Graduation_Project/yolov8l.pt",  # 替换为实际本地路径
+    "best.pt":"runs/detect/gesture_final_train/weights/best.pt",
 }
 
 MODEL_OPTIONS = {
@@ -44,7 +45,7 @@ MODEL_OPTIONS = {
     "yolov8s.pt": {"name": "目标识别-Small (平衡)", "local_path": LOCAL_MODEL_PATHS["yolov8s.pt"], "is_custom": False},
     "yolov8m.pt": {"name": "目标识别-Medium (高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8m.pt"], "is_custom": False},
     "yolov8l.pt": {"name": "目标识别-Large (超高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8l.pt"], "is_custom": False},
-    "custom_weight": {"name": "手势识别-Best (自定义权重)", "local_path": None, "is_custom": True}  # 自定义权重占位符
+    "custom_weight": {"name": "手势识别-Best (训练权重)", "local_path": LOCAL_MODEL_PATHS["best.pt"], "is_custom": False},  # 自定义权重占位符
 }
 
 # 支持的输入尺寸和手势类别
@@ -58,7 +59,7 @@ os.makedirs("temp", exist_ok=True)
 def check_local_model(model_path):
     """检查本地模型文件是否存在"""
     if os.path.exists(model_path):
-        st.info(f"已检测到本地模型：{model_path}")
+        st.info(f"已检测到本地模型！")
         return True
     else:
         st.error(f"本地模型文件不存在：{model_path}")

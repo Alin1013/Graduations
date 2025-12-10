@@ -13,7 +13,7 @@ cache: false
 device: cpu
 workers: 0
 project: null
-name: gesture_final_train_final
+name: gesture_final_train
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -103,4 +103,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /Users/alin/Graduation_Project/runs/detect/gesture_final_train_final
+save_dir: /Users/alin/Graduation_Project/runs/detect/gesture_final_train
