@@ -20,7 +20,7 @@ def prune_model(model, pruning_ratio=0.3):
 # 剪枝流程示例
 if __name__ == "__main__":
     # 加载预训练模型
-    model = YOLOv8(num_names=18)
+    model = YOLOv8(num_names=3)
     model.load_state_dict(torch.load("temp/best_model.pt"))  # 加载训练好的模型
 
     # 剪枝

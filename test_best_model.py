@@ -5,13 +5,13 @@ import cv2
 import os  # 新增：导入os模块（解决路径打印报错）
 
 # 数据集内的测试图像（已确认存在）
-test_image = '/Users/alin/Graduation_Project/VOCdevkit/VOC2026/JPEGImages/1a16d7cd-e361-4c38-bca2-688855bae2c4_000.jpg'
+test_image = '/Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/train/0a1eba8e-8671-47ad-9de3-48b0805c7ef5.jpg'
 
 # 加载模型（根据训练进度选择）
 # 选项1：训练未完成，用最新模型（last.pt）
-model = YOLO('runs/detect/gesture_final_train/weights/last.pt')
+#model = YOLO('runs/detect/gesture_final_train/weights/last.pt')
 # 选项2：训练已完成，用最佳模型（best.pt）→ 注释上面，解开下面
-# model = YOLO('runs/detect/gesture_final_train/weights/best.pt')
+model = YOLO('runs/detect/gesture_final_train/weights/best.pt')
 
 # 降低置信度阈值（从0.5→0.3，避免漏检，适合训练初期模型）
 results = model(test_image, conf=0.3)
