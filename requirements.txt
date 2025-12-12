@@ -19,7 +19,7 @@ ultralytics==8.3.229
 
 # YOLOv8n基础模型训练
 #无显卡，使用cpu
-# python3 train.py --epochs 10 --imgsz 640 --device cpu --batch-size 4 --weights ./yolov8n.pt
+# python3 train.py --epochs 50 --imgsz 640 --device cpu --batch-size 4 --weights ./yolov8n.pt
 
 # 冻结训练
 # python3 train.py --epochs 100 --freeze --freeze-epochs 50 --device cpu
