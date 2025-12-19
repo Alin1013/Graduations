@@ -1,47 +1,85 @@
 from ultralytics import YOLO
 import os
+import torch
+from pathlib import Path
+
+# 项目根目录（动态计算，避免硬编码）
+PROJECT_ROOT = Path(__file__).parent
+native_yaml_path = PROJECT_ROOT / "native_data.yaml"
 
 # -------------------------- 生成原生格式的 yaml 文件 --------------------------
-native_yaml_path = "/Users/alin/Graduation_Project/native_data.yaml"
-with open(native_yaml_path, "w", encoding="utf-8") as f:
-    f.write("""# YOLOv8 原生数据集格式（图像和标签目录对应）
-train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/train  # 训练图像目录
-val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/val      # 验证图像目录
+try:
+    # 动态获取数据集路径
+    train_img_dir = PROJECT_ROOT / "VOCdevkit/VOC2026/images/train"
+    val_img_dir = PROJECT_ROOT / "VOCdevkit/VOC2026/images/val"
+
+    # 检查数据集目录是否存在
+    if not train_img_dir.exists():
+        raise FileNotFoundError(f"训练图像目录不存在：{train_img_dir}")
+    if not val_img_dir.exists():
+        raise FileNotFoundError(f"验证图像目录不存在：{val_img_dir}")
+
+    with open(native_yaml_path, "w", encoding="utf-8") as f:
+        f.write(f"""# YOLOv8 原生数据集格式（图像和标签目录对应）
+train: {train_img_dir}
+val: {val_img_dir}
 nc: 19
 names: ["no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","three_two","two_up","two_up_invered"]
-# 标签目录默认与图像目录对应（images → labels），无需额外指定！
 """)
+except Exception as e:
+    print(f"❌ 生成 YAML 文件失败：{e}")
+    exit(1)
 
 # -------------------------- 加载模型并训练 --------------------------
-model = YOLO('yolov8n.pt')
+try:
+    model = YOLO('yolov8n.pt')  # 加载预训练模型
 
-training_results = model.train(
-    data=native_yaml_path,  # 原生格式 yaml
-    epochs=50,
-    batch=4,
-    device='cpu',
-    workers=0,
-    imgsz=640,
-    pretrained=True,
-    name='gesture_final_train',  # 最终训练目录
-    cache=False,
-    verbose=True,
-    fliplr=0.5,
-    hsv_h=0.015,
-    hsv_s=0.7,
-    hsv_v=0.4,
-    translate=0.1,
-    erasing=0.4,
-    lr0=0.001,
-    weight_decay=0.0005
-)
+    # 自动选择设备（优先 GPU）
+    device = '0' if torch.cuda.is_available() else 'cpu'
+    print(f"🔧 使用设备：{device}（GPU 可用：{torch.cuda.is_available()}）")
 
-# 删除临时 yaml 文件
-if os.path.exists(native_yaml_path):
-    os.remove(native_yaml_path)
-    print(f"\n🗑️  临时 yaml 文件已删除：{native_yaml_path}")
+    training_results = model.train(
+        data=str(native_yaml_path),
+        epochs=50,
+        batch=4,
+        device=device,
+        workers=min(os.cpu_count(), 4),  # 自适应 CPU 核心数
+        imgsz=640,
+        pretrained=True,
+        name='gesture_final_train',
+        cache=False,
+        verbose=True,
+        # 数据增强
+        fliplr=0.5,
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        translate=0.1,
+        erasing=0.4,
+        # 优化器
+        lr0=0.001,
+        lrf=0.01,
+        weight_decay=0.0005,
+        # 早停与验证
+        patience=10,
+        val_freq=2,
+    )
+except Exception as e:
+    print(f"❌ 训练过程出错：{e}")
+    exit(1)
 
-# 打印结果路径
+# -------------------------- 清理与结果输出 --------------------------
+# 删除临时 YAML 文件
+try:
+    if os.path.exists(native_yaml_path):
+        os.remove(native_yaml_path)
+        print(f"\n🗑️  临时 yaml 文件已删除：{native_yaml_path}")
+except PermissionError:
+    print(f"\n⚠️  无权限删除临时文件：{native_yaml_path}，请手动删除")
+
+# 打印训练结果
 print("\n🎉 训练完成！")
 print(f"📁 训练结果保存路径：{training_results.save_dir}")
 print(f"💾 最佳模型路径：{training_results.save_dir}/weights/best.pt")
+if hasattr(training_results, 'best_fitness'):
+    print(f"📊 最佳模型 mAP50-95：{training_results.best_fitness:.4f}")
