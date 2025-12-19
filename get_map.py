@@ -6,6 +6,7 @@ from PIL import Image
 from tqdm import tqdm
 from ultralytics import YOLO
 import warnings
+from datetime import datetime
 
 warnings.filterwarnings('ignore')  # 忽略无关警告
 
@@ -153,7 +154,7 @@ def get_map(min_overlap=0.5, visualize=False, path="map_out"):
         print(f"📌 {cls}: AP={ap:.3f}")
 
     # 计算mAP并输出
-    mAP = np.mean(aps)
+    mAP = np.mean(aps) if aps else 0.0
     print(f"\n{'=' * 50}")
     print(f"🎯 mAP@{min_overlap} = {mAP:.3f}")
     print('=' * 50)
@@ -268,6 +269,14 @@ if __name__ == "__main__":
     parser.add_argument('--vis', action='store_true', help='是否生成PR曲线和可视化图像')
 
     opt = parser.parse_args()
+
+    # 检查可视化依赖
+    if opt.vis:
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("⚠️  缺少matplotlib库，自动禁用可视化功能")
+            opt.vis = False
 
     # 打印配置信息
     print("=" * 60)
@@ -392,9 +401,9 @@ if __name__ == "__main__":
 
                 # 解析预测结果
                 det_lines = []
-                for r in results:
-                    if r.boxes is None:
-                        continue
+                # 单张图像预测结果处理
+                r = results[0]
+                if r.boxes is not None:
                     boxes = r.boxes
                     for box in boxes:
                         cls_id = int(box.cls[0])
@@ -438,6 +447,7 @@ if __name__ == "__main__":
 
             try:
                 with Image.open(img_path) as img:
+                    img = img.convert('RGB')  # 确保图像格式正确
                     img_w, img_h = img.size
             except Exception as e:
                 print(f"\n⚠️  读取图像尺寸 {image_id} 失败：{e}，跳过")
@@ -463,6 +473,7 @@ if __name__ == "__main__":
 
                     # 校验
                     if cls_id < 0 or cls_id >= len(class_names):
+                        print(f"\n⚠️  类别ID {cls_id} 超出范围（0-{len(class_names)-1}），跳过")
                         continue
                     if x_center < 0 or x_center > 1 or y_center < 0 or y_center > 1:
                         continue
@@ -512,7 +523,7 @@ if __name__ == "__main__":
         with open(result_path, 'w', encoding='utf-8') as f:
             f.write(f"YOLOv8 mAP 评估结果\n")
             f.write(f"{'=' * 30}\n")
-            f.write(f"评估时间：{os.popen('date').read().strip()}\n")
+            f.write(f"评估时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"模型权重：{opt.weights}\n")
             f.write(f"输入尺寸：{opt.shape}\n")
             f.write(f"置信度阈值：{opt.confidence}\n")

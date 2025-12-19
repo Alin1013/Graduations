@@ -1,18 +1,48 @@
 import os
-
+from typing import Optional, List, Tuple
 import torch
+from torch.optim import Optimizer
 from tqdm import tqdm
+from torch.cuda.amp import GradScaler, autocast  # 移至顶部导入
 
 from utils.utils import get_lr
+from utils.callbacks import LossHistory  # 假设LossHistory的导入路径
 
 
-def fit_one_epoch(model_train, model, yolo_loss, loss_history, optimizer, epoch, epoch_step, epoch_step_val, gen, gen_val, Epoch, cuda, fp16, scaler, save_period, save_dir, local_rank=0):
-    loss        = 0
-    val_loss    = 0
+def fit_one_epoch(
+        model_train: torch.nn.Module,
+        model: torch.nn.Module,
+        yolo_loss: torch.nn.Module,
+        loss_history: LossHistory,
+        optimizer: Optimizer,
+        epoch: int,
+        epoch_step: int,
+        epoch_step_val: int,
+        gen: List[Tuple[torch.Tensor, List[torch.Tensor]]],
+        gen_val: List[Tuple[torch.Tensor, List[torch.Tensor]]],
+        Epoch: int,
+        cuda: bool,
+        fp16: bool,
+        scaler: Optional[GradScaler],
+        save_period: int,
+        save_dir: str,
+        local_rank: int = 0
+) -> None:
+    loss: float = 0.0
+    val_loss: float = 0.0
+
+    # 确保保存目录存在
+    os.makedirs(save_dir, exist_ok=True)
 
     if local_rank == 0:
         print('Start Train')
-        pbar = tqdm(total=epoch_step,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3)
+        pbar = tqdm(
+            total=epoch_step,
+            desc=f'Epoch {epoch + 1}/{Epoch}',
+            postfix=dict,
+            mininterval=0.3
+        )
+
     model_train.train()
     for iteration, batch in enumerate(gen):
         if iteration >= epoch_step:
@@ -21,95 +51,80 @@ def fit_one_epoch(model_train, model, yolo_loss, loss_history, optimizer, epoch,
         images, targets = batch[0], batch[1]
         with torch.no_grad():
             if cuda:
-                images  = images.cuda()
-                targets = [ann.cuda() for ann in targets]
-        #----------------------#
-        #   清零梯度
-        #----------------------#
-        optimizer.zero_grad()
-        if not fp16:
-            #----------------------#
-            #   前向传播
-            #----------------------#
-            outputs         = model_train(images)
+                images = images.cuda(non_blocking=True)  # 添加non_blocking加速
+                targets = [ann.cuda(non_blocking=True) for ann in targets]
 
-            loss_value_all  = 0
-            #----------------------#
-            #   计算损失
-            #----------------------#
+        # 清零梯度
+        optimizer.zero_grad()
+
+        if not fp16:
+            # 前向传播
+            outputs = model_train(images)
+            loss_value_all = 0.0
+
+            # 计算损失
             for l in range(len(outputs)):
                 loss_item = yolo_loss(l, outputs[l], targets)
-                loss_value_all  += loss_item
+                loss_value_all += loss_item
             loss_value = loss_value_all
 
-            #----------------------#
-            #   反向传播
-            #----------------------#
+            # 反向传播
             loss_value.backward()
             optimizer.step()
         else:
-            from torch.cuda.amp import autocast
             with autocast():
-                #----------------------#
-                #   前向传播
-                #----------------------#
-                outputs         = model_train(images)
+                outputs = model_train(images)
+                loss_value_all = 0.0
 
-                loss_value_all  = 0
-                #----------------------#
-                #   计算损失
-                #----------------------#
                 for l in range(len(outputs)):
                     loss_item = yolo_loss(l, outputs[l], targets)
-                    loss_value_all  += loss_item
+                    loss_value_all += loss_item
                 loss_value = loss_value_all
 
-            #----------------------#
-            #   反向传播
-            #----------------------#
+            # 混合精度反向传播
             scaler.scale(loss_value).backward()
             scaler.step(optimizer)
             scaler.update()
 
         loss += loss_value.item()
-        
+
         if local_rank == 0:
-            pbar.set_postfix(**{'loss'  : loss / (iteration + 1), 
-                                'lr'    : get_lr(optimizer)})
+            pbar.set_postfix(
+                **{'loss': loss / (iteration + 1),
+                   'lr': get_lr(optimizer)}
+            )
             pbar.update(1)
 
     if local_rank == 0:
         pbar.close()
         print('Finish Train')
         print('Start Validation')
-        pbar = tqdm(total=epoch_step_val, desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3)
+        pbar = tqdm(
+            total=epoch_step_val,
+            desc=f'Epoch {epoch + 1}/{Epoch}',
+            postfix=dict,
+            mininterval=0.3
+        )
 
     model_train.eval()
     for iteration, batch in enumerate(gen_val):
         if iteration >= epoch_step_val:
             break
         images, targets = batch[0], batch[1]
-        with torch.no_grad():
+        with torch.no_grad():  # 验证阶段无需计算梯度
             if cuda:
-                images  = images.cuda()
-                targets = [ann.cuda() for ann in targets]
-            #----------------------#
-            #   清零梯度
-            #----------------------#
-            optimizer.zero_grad()
-            #----------------------#
-            #   前向传播
-            #----------------------#
-            outputs         = model_train(images)
+                images = images.cuda(non_blocking=True)
+                targets = [ann.cuda(non_blocking=True) for ann in targets]
 
-            loss_value_all  = 0
-            #----------------------#
-            #   计算损失
-            #----------------------#
+            # 前向传播（删除不必要的optimizer.zero_grad()）
+            outputs = model_train(images)
+            loss_value_all = 0.0
+
+            # 计算损失
             for l in range(len(outputs)):
                 loss_item = yolo_loss(l, outputs[l], targets)
-                loss_value_all  += loss_item
-            loss_value  = loss_value_all
+                loss_value_all += loss_item
+            loss_value = loss_value_all
 
         val_loss += loss_value.item()
         if local_rank == 0:
@@ -120,9 +135,16 @@ def fit_one_epoch(model_train, model, yolo_loss, loss_history, optimizer, epoch,
         pbar.close()
         print('Finish Validation')
         loss_history.append_loss(epoch + 1, loss / epoch_step, val_loss / epoch_step_val)
-        print('Epoch:'+ str(epoch + 1) + '/' + str(Epoch))
-        print('Total Loss: %.3f || Val Loss: %.3f ' % (loss / epoch_step, val_loss / epoch_step_val))
+        print(f'Epoch: {epoch + 1}/{Epoch}')
+        print(f'Total Loss: {loss / epoch_step:.3f} || Val Loss: {val_loss / epoch_step_val:.3f}')
+
+        # 按周期保存模型
         if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
-            torch.save(model.state_dict(), os.path.join(save_dir, "ep%03d-loss%.3f-val_loss%.3f.pth" % (epoch + 1, loss / epoch_step, val_loss / epoch_step_val)))
-        # 每次保存最后一个权重
-        torch.save(model.state_dict(), os.path.join(save_dir, "last.pth" ))
+            save_path = os.path.join(
+                save_dir,
+                f"ep{epoch + 1:03d}-loss{loss / epoch_step:.3f}-val_loss{val_loss / epoch_step_val:.3f}.pth"
+            )
+            torch.save(model.state_dict(), save_path)
+
+        # 保存最新模型
+        torch.save(model.state_dict(), os.path.join(save_dir, "last.pth"))
