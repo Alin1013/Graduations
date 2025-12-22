@@ -26,6 +26,7 @@ val: {val_img_dir}
 nc: 19
 names: ["no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","three_two","two_up","two_up_invered"]
 """)
+    print(f"✅ 成功生成数据集配置文件：{native_yaml_path}")
 except Exception as e:
     print(f"❌ 生成 YAML 文件失败：{e}")
     exit(1)
@@ -60,9 +61,10 @@ try:
         lr0=0.001,
         lrf=0.01,
         weight_decay=0.0005,
-        # 早停与验证
+        # 早停与验证（移除废弃的 val_freq，改用 val_period）
         patience=10,
-        val_freq=2,
+        val_period=2,  # 替代 val_freq，每 2 个 epoch 验证一次
+        val=True  # 显式开启验证（默认开启，可省略）
     )
 except Exception as e:
     print(f"❌ 训练过程出错：{e}")
@@ -71,15 +73,18 @@ except Exception as e:
 # -------------------------- 清理与结果输出 --------------------------
 # 删除临时 YAML 文件
 try:
-    if os.path.exists(native_yaml_path):
-        os.remove(native_yaml_path)
+    if native_yaml_path.exists():
+        native_yaml_path.unlink()  # Path 对象更推荐用 unlink() 替代 os.remove()
         print(f"\n🗑️  临时 yaml 文件已删除：{native_yaml_path}")
 except PermissionError:
     print(f"\n⚠️  无权限删除临时文件：{native_yaml_path}，请手动删除")
+except Exception as e:
+    print(f"\n⚠️  删除临时文件失败：{e}")
 
 # 打印训练结果
 print("\n🎉 训练完成！")
 print(f"📁 训练结果保存路径：{training_results.save_dir}")
-print(f"💾 最佳模型路径：{training_results.save_dir}/weights/best.pt")
+best_pt_path = Path(training_results.save_dir) / "weights" / "best.pt"
+print(f"💾 最佳模型路径：{best_pt_path}")
 if hasattr(training_results, 'best_fitness'):
     print(f"📊 最佳模型 mAP50-95：{training_results.best_fitness:.4f}")
