@@ -1,11 +1,29 @@
 from ultralytics import YOLO
 import os
 import torch
+import argparse
 from pathlib import Path
 
+# -------------------------- 解析终端传入的参数 --------------------------
+parser = argparse.ArgumentParser(description='YOLOv8 手势识别训练脚本')
+# 核心训练参数（支持终端传参，同时设置默认值）
+parser.add_argument('--epochs', type=int, default=50, help='训练轮数')
+parser.add_argument('--imgsz', type=int, default=640, help='输入图像尺寸')
+parser.add_argument('--device', type=str, default=None, help='训练设备 (cpu/0/cuda)')
+parser.add_argument('--batch-size', type=int, default=4, help='批次大小')
+parser.add_argument('--weights', type=str, default='yolov8n.pt', help='预训练权重路径')
+args = parser.parse_args()
+
+# -------------------------- 基础配置 --------------------------
 # 项目根目录（动态计算，避免硬编码）
 PROJECT_ROOT = Path(__file__).parent
 native_yaml_path = PROJECT_ROOT / "native_data.yaml"
+
+# 处理设备参数（优先终端传入，其次自动检测）
+if args.device:
+    device = args.device
+else:
+    device = '0' if torch.cuda.is_available() else 'cpu'
 
 # -------------------------- 生成原生格式的 yaml 文件 --------------------------
 try:
@@ -33,19 +51,18 @@ except Exception as e:
 
 # -------------------------- 加载模型并训练 --------------------------
 try:
-    model = YOLO('yolov8n.pt')  # 加载预训练模型
-
-    # 自动选择设备（优先 GPU）
-    device = '0' if torch.cuda.is_available() else 'cpu'
+    model = YOLO(args.weights)  # 加载指定的预训练模型
     print(f"🔧 使用设备：{device}（GPU 可用：{torch.cuda.is_available()}）")
 
+    # YOLOv8 最新版本中，验证频率无法通过参数直接设置，默认每轮验证
+    # 如需控制验证频率，可训练完成后手动执行 val，或降低早停patience
     training_results = model.train(
         data=str(native_yaml_path),
-        epochs=50,
-        batch=4,
-        device=device,
+        epochs=args.epochs,          # 使用终端传入的 epochs（默认50）
+        batch=args.batch_size,       # 使用终端传入的 batch-size（默认4）
+        device=device,              # 使用处理后的设备参数
         workers=min(os.cpu_count(), 4),  # 自适应 CPU 核心数
-        imgsz=640,
+        imgsz=args.imgsz,           # 使用终端传入的 imgsz（默认640）
         pretrained=True,
         name='gesture_final_train',
         cache=False,
@@ -61,10 +78,9 @@ try:
         lr0=0.001,
         lrf=0.01,
         weight_decay=0.0005,
-        # 早停与验证（移除废弃的 val_freq，改用 val_period）
+        # 早停（移除 val_freq/val_period，YOLOv8 最新版已移除该参数）
         patience=10,
-        val_period=2,  # 替代 val_freq，每 2 个 epoch 验证一次
-        val=True  # 显式开启验证（默认开启，可省略）
+        val=True  # 仅控制是否验证，频率由框架默认处理
     )
 except Exception as e:
     print(f"❌ 训练过程出错：{e}")
