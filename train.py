@@ -27,7 +27,7 @@ else:
 
 # -------------------------- 生成原生格式的 yaml 文件 --------------------------
 try:
-    # 动态获取数据集路径
+    # 动态获取数据集路径（与gesture.yaml保持一致）
     train_img_dir = PROJECT_ROOT / "VOCdevkit/VOC2026/images/train"
     val_img_dir = PROJECT_ROOT / "VOCdevkit/VOC2026/images/val"
 
@@ -38,7 +38,7 @@ try:
         raise FileNotFoundError(f"验证图像目录不存在：{val_img_dir}")
 
     with open(native_yaml_path, "w", encoding="utf-8") as f:
-        f.write(f"""# YOLOv8 原生数据集格式（图像和标签目录对应）
+        f.write(f"""# YOLOv8 原生数据集格式（与gesture.yaml类别一致）
 train: {train_img_dir}
 val: {val_img_dir}
 nc: 19
@@ -54,43 +54,43 @@ try:
     model = YOLO(args.weights)  # 加载指定的预训练模型
     print(f"🔧 使用设备：{device}（GPU 可用：{torch.cuda.is_available()}）")
 
-    # YOLOv8 最新版本中，验证频率无法通过参数直接设置，默认每轮验证
-    # 如需控制验证频率，可训练完成后手动执行 val，或降低早停patience
+    # 训练配置（保留原参数，新增余弦学习率调度）
     training_results = model.train(
         data=str(native_yaml_path),
-        epochs=args.epochs,          # 使用终端传入的 epochs（默认50）
-        batch=args.batch_size,       # 使用终端传入的 batch-size（默认4）
-        device=device,              # 使用处理后的设备参数
-        workers=min(os.cpu_count(), 4),  # 自适应 CPU 核心数
-        imgsz=args.imgsz,           # 使用终端传入的 imgsz（默认640）
+        epochs=args.epochs,
+        batch=args.batch_size,
+        device=device,
+        workers=min(os.cpu_count(), 4),  # 自适应CPU核心数
+        imgsz=args.imgsz,
         pretrained=True,
         name='gesture_final_train',
         cache=False,
         verbose=True,
-        # 数据增强
-        fliplr=0.5,
-        hsv_h=0.015,
-        hsv_s=0.7,
-        hsv_v=0.4,
-        translate=0.1,
-        erasing=0.4,
+        # 数据增强（适合手势识别的参数）
+        fliplr=0.5,          # 水平翻转
+        hsv_h=0.015,         # 色调抖动
+        hsv_s=0.7,           # 饱和度抖动
+        hsv_v=0.4,           # 明度抖动
+        translate=0.1,       # 平移变换
+        erasing=0.4,         # 随机擦除
         # 优化器
-        lr0=0.001,
-        lrf=0.01,
-        weight_decay=0.0005,
-        # 早停（移除 val_freq/val_period，YOLOv8 最新版已移除该参数）
-        patience=10,
-        val=True  # 仅控制是否验证，频率由框架默认处理
+        lr0=0.001,           # 初始学习率
+        lrf=0.01,            # 最终学习率因子
+        weight_decay=0.0005, # 权重衰减
+        cos_lr=True,         # 新增：余弦学习率调度
+        # 早停设置
+        patience=10,         # 10轮无提升则停止
+        val=True             # 启用验证
     )
 except Exception as e:
     print(f"❌ 训练过程出错：{e}")
     exit(1)
 
 # -------------------------- 清理与结果输出 --------------------------
-# 删除临时 YAML 文件
+# 删除临时YAML文件
 try:
     if native_yaml_path.exists():
-        native_yaml_path.unlink()  # Path 对象更推荐用 unlink() 替代 os.remove()
+        native_yaml_path.unlink()
         print(f"\n🗑️  临时 yaml 文件已删除：{native_yaml_path}")
 except PermissionError:
     print(f"\n⚠️  无权限删除临时文件：{native_yaml_path}，请手动删除")
