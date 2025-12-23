@@ -6,7 +6,9 @@ import torch
 import torch.nn as nn
 
 class YOLOLosstiny(nn.Module):
-    def __init__(self, anchors, num_classes, input_shape, cuda, anchors_mask = [[6,7,8], [3,4,5], [0,1,2]], label_smoothing = 0):
+    def __init__(self, anchors, num_classes, input_shape, cuda,
+                 anchors_mask=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
+                 label_smoothing=0, focal_loss=True, alpha=0.25, gamma=2):  # 新增参数
         super(YOLOLosstiny, self).__init__()
         #-----------------------------------------------------------#
         #   13x13的特征层对应的anchor是[81,82],[135,169],[344,319]
@@ -26,8 +28,11 @@ class YOLOLosstiny(nn.Module):
 
         self.ignore_threshold = 0.5
         self.cuda           = cuda
+        self.focal_loss = focal_loss  # 新增
+        self.alpha = alpha  # 新增
+        self.gamma = gamma
 
-    def clip_by_tensor(self, t, t_min, t_max):
+def clip_by_tensor(self, t, t_min, t_max):
         t = t.float()
         result = (t >= t_min).float() * t + (t < t_min).float() * t_min
         result = (result <= t_max).float() * result + (result > t_max).float() * t_max
@@ -36,10 +41,19 @@ class YOLOLosstiny(nn.Module):
     def MSELoss(self, pred, target):
         return torch.pow(pred - target, 2)
 
+
     def BCELoss(self, pred, target):
+        if not self.focal_loss:
+            return super().BCELoss(pred, target)
+
         epsilon = 1e-7
-        pred    = self.clip_by_tensor(pred, epsilon, 1.0 - epsilon)
-        output  = - target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
+        pred = self.clip_by_tensor(pred, epsilon, 1.0 - epsilon)
+        # Focal Loss公式: -alpha * (1-pred)^gamma * target * log(pred) - (1-alpha) * pred^gamma * (1-target) * log(1-pred)
+        pt = pred * target + (1 - pred) * (1 - target)
+        weight = self.alpha * target + (1 - self.alpha) * (1 - target)
+        weight = weight * torch.pow(1 - pt, self.gamma)
+
+        output = -weight * (target * torch.log(pred) + (1.0 - target) * torch.log(1.0 - pred))
         return output
         
     def box_ciou(self, b1, b2):
@@ -192,20 +206,21 @@ class YOLOLosstiny(nn.Module):
         obj_mask    = y_true[..., 4] == 1
         n           = torch.sum(obj_mask)
         if n != 0:
-            #---------------------------------------------------------------#
-            #   计算预测结果和真实结果的差距
-            #   loss_loc ciou回归损失
-            #   loss_cls 分类损失
-            #---------------------------------------------------------------#
-            ciou        = self.box_ciou(pred_boxes, y_true[..., :4]).type_as(x)
-            # loss_loc    = torch.mean((1 - ciou)[obj_mask] * box_loss_scale[obj_mask])
-            loss_loc    = torch.mean((1 - ciou)[obj_mask])
-            
-            loss_cls    = torch.mean(self.BCELoss(pred_cls[obj_mask], y_true[..., 5:][obj_mask]))
-            loss        += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+            # 新增：计算类别损失时应用类别平衡权重
+            cls_weights = torch.ones(self.num_classes, device=input.device)
+            # 可以根据实际类别分布调整权重，例如对稀有类别增加权重
+            rare_classes = [2, 5, 10]  # 假设这些是识别不准的类别
+            cls_weights[rare_classes] = 1.5  # 提高权重
 
-        loss_conf   = torch.mean(self.BCELoss(conf, obj_mask.type_as(conf))[noobj_mask.bool() | obj_mask])
-        loss        += loss_conf * self.balance[l] * self.obj_ratio
+            # 类别损失计算
+            if self.label_smoothing > 0:
+                smoothed_labels = self.smooth_labels(y_true[..., 5:][obj_mask], self.label_smoothing, self.num_classes)
+                loss_cls = torch.mean(self.BCELoss(pred_cls[obj_mask], smoothed_labels) * cls_weights)
+            else:
+                loss_cls = torch.mean(self.BCELoss(pred_cls[obj_mask], y_true[..., 5:][obj_mask]) * cls_weights)
+
+            # 综合损失
+            loss = loss_loc * self.box_ratio + loss_cls * self.cls_ratio + loss_conf * self.obj_ratio
         # if n != 0:
         #     print(loss_loc * self.box_ratio, loss_cls * self.cls_ratio, loss_conf * self.balance[l] * self.obj_ratio)
         return loss
