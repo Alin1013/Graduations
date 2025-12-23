@@ -4,6 +4,7 @@ from .CSPdarknet import CSPDarkNet  # 导入CSPDarknet主干网络
 from .pan import PAN  # 导入带CBAM的PAN-FPN颈部
 from .yolo_training import YOLOLoss  # 导入损失函数
 from utils.utils_bbox import DecodeBox  # 导入解码模块
+from nets.attention import ChannelAttention, SpatialAttention  # 空间和通道注意力模块
 
 
 class YOLOv8(nn.Module):
@@ -38,6 +39,14 @@ class YOLOv8(nn.Module):
             focal_loss=focal_loss, alpha=alpha, gamma=gamma
         )
 
+        # 新增注意力模块（针对PAN输出的三个尺度特征）
+        self.ca1 = ChannelAttention(256)  # 小尺度特征通道注意力
+        self.sa1 = SpatialAttention()  # 小尺度特征空间注意力
+        self.ca2 = ChannelAttention(512)  # 中尺度特征通道注意力
+        self.sa2 = SpatialAttention()  # 中尺度特征空间注意力
+        self.ca3 = ChannelAttention(1024)  # 大尺度特征通道注意力
+        self.sa3 = SpatialAttention()  # 大尺度特征空间注意力
+
     def forward(self, x, targets=None):
         # 主干网络提取特征 [P3, P4, P5]
         # P3: 52x52x256, P4:26x26x512, P5:13x13x1024
@@ -46,8 +55,22 @@ class YOLOv8(nn.Module):
         # PAN-FPN特征融合 [P3_out, P4_out, P5_out]
         neck_outs = self.neck(features)
 
-        # 检测头输出
-        outputs = [self.head[i](neck_outs[i]) for i in range(3)]
+        # 对融合后的特征应用注意力机制（关键修正：在检测头前增强特征）
+        enhanced_outs = []
+        for i in range(3):
+            if i == 0:  # 小尺度特征 (52x52x256)
+                feat = self.ca1(neck_outs[i]) * neck_outs[i]  # 通道注意力
+                feat = self.sa1(feat) * feat  # 空间注意力
+            elif i == 1:  # 中尺度特征 (26x26x512)
+                feat = self.ca2(neck_outs[i]) * neck_outs[i]
+                feat = self.sa2(feat) * feat
+            else:  # 大尺度特征 (13x13x1024)
+                feat = self.ca3(neck_outs[i]) * neck_outs[i]
+                feat = self.sa3(feat) * feat
+            enhanced_outs.append(feat)
+
+        # 检测头输出（使用增强后的特征）
+        outputs = [self.head[i](enhanced_outs[i]) for i in range(3)]
 
         # 训练模式：计算损失
         if self.training:
