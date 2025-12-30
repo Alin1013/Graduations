@@ -30,3 +30,6 @@ ultralytics==8.3.229
 
 #streamlit交互界面打开命令
 #  streamlit run gesture.streamlit.py
+
+#中断之后跟着训练
+# python3 train.py --epochs 50 --imgsz 640 --device cpu --batch-size 4 --weights ./runs/detect/gesture_final_train/last.pt --resume

@@ -60,6 +60,6 @@ temp/
 !model_data/gesture.yaml  # 保留模型配置
 !model_data/gesture_classes.txt  # 保留类别定义
 
-#特定的目录，数据集文件太多，上传时间过长还可能会崩溃
+#数据集文件太多，上传时间过长还可能会崩溃
 VOCdevkit/
 
