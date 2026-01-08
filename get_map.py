@@ -83,6 +83,7 @@ def get_map(min_overlap=0.5, visualize=False, path="map_out"):
 
     # 4. 计算每个类别的 AP
     aps = []
+    class_ap_dict = {}  # 存储每个类别的AP值，用于PR曲线绘制
     print(f"\n{'=' * 50}")
     print(f"开始计算 mAP@{min_overlap}")
     print(f"📊 统计信息：类别数={len(classes)}，图像数={len(image_ids)}")
@@ -96,10 +97,12 @@ def get_map(min_overlap=0.5, visualize=False, path="map_out"):
         if not gt:
             print(f"📌 {cls}: 无真实框标注 → AP=0.000")
             aps.append(0.0)
+            class_ap_dict[cls] = 0.0
             continue
         if not det:
             print(f"📌 {cls}: 无预测结果 → AP=0.000")
             aps.append(0.0)
+            class_ap_dict[cls] = 0.0
             continue
 
         # 计算TP/FP
@@ -151,25 +154,47 @@ def get_map(min_overlap=0.5, visualize=False, path="map_out"):
                 ap += np.max(precision[mask]) / 11.0
 
         aps.append(ap)
+        class_ap_dict[cls] = ap
         print(f"📌 {cls}: AP={ap:.3f}")
 
     # 计算mAP并输出
     mAP = np.mean(aps) if aps else 0.0
     print(f"\n{'=' * 50}")
-    print(f"🎯 mAP@{min_overlap} = {mAP:.3f}")
+    print(f"🎯 mAP@{min_overlap} = {mAP:.3f} ({mAP*100:.1f}%)")
     print('=' * 50)
+    
+    # 输出统计信息
+    print(f"\n📊 详细统计：")
+    print(f"   ├── 总类别数：{len(classes)}")
+    print(f"   ├── 有真实框的类别：{len([c for c in classes if gt_boxes.get(c)])}")
+    print(f"   ├── 有预测框的类别：{len([c for c in classes if det_boxes.get(c)])}")
+    print(f"   └── 总真实框数：{sum(len(v) for v in gt_boxes.values())}")
+    print(f"   └── 总预测框数：{sum(len(v) for v in det_boxes.values())}")
 
     # 可选：生成PR曲线
     if visualize:
         try:
+            import matplotlib
+            matplotlib.use('Agg')  # 使用非交互式后端
             import matplotlib.pyplot as plt
-            plt.figure(figsize=(10, 8))
-            for cls in classes:
+            
+            # 设置中文字体支持
+            plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'DejaVu Sans', 'SimHei']
+            plt.rcParams['axes.unicode_minus'] = False
+            
+            plt.figure(figsize=(12, 8))
+            colors = plt.cm.tab20(np.linspace(0, 1, len(classes)))
+            
+            for idx, cls in enumerate(classes):
                 gt = gt_boxes.get(cls, [])
                 det = sorted(det_boxes.get(cls, []), key=lambda x: x[1], reverse=True)
                 if not gt or not det:
                     continue
+                
                 n_pos = sum(1 for g in gt if not g[5])
+                if n_pos == 0:
+                    continue
+                    
                 tp = np.zeros(len(det))
                 fp = np.zeros(len(det))
                 gt_detected = {i: False for i in range(len(gt))}
@@ -197,36 +222,66 @@ def get_map(min_overlap=0.5, visualize=False, path="map_out"):
                         gt_detected[matched_idx] = True
                     else:
                         fp[i] = 1
+                
                 tp_cumsum = np.cumsum(tp)
                 fp_cumsum = np.cumsum(fp)
                 recall = tp_cumsum / (n_pos + 1e-8)
                 precision = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-8)
-                plt.plot(recall, precision,
-                         label=f'{cls} (AP={np.mean([ap for c, ap in zip(classes, aps) if c == cls]):.3f})')
+                
+                # 确保recall和precision数组有效
+                if len(recall) == 0 or len(precision) == 0:
+                    continue
+                
+                # 使用预先计算的AP值
+                ap_value = class_ap_dict.get(cls, 0.0)
+                plt.plot(recall, precision, 
+                        color=colors[idx], 
+                        linewidth=2,
+                        label=f'{cls} (AP={ap_value:.3f})',
+                        alpha=0.8)
 
-            plt.xlabel('Recall')
-            plt.ylabel('Precision')
-            plt.title(f'PR Curves (mAP@{min_overlap} = {mAP:.3f})')
-            plt.legend()
-            plt.grid(alpha=0.3)
+            plt.xlabel('Recall', fontsize=12, fontweight='bold')
+            plt.ylabel('Precision', fontsize=12, fontweight='bold')
+            plt.title(f'Precision-Recall Curves (mAP@{min_overlap} = {mAP:.3f})', 
+                     fontsize=14, fontweight='bold')
+            plt.legend(loc='best', fontsize=9, ncol=2)
+            plt.grid(True, alpha=0.3, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.tight_layout()
             plt.savefig(os.path.join(path, 'pr_curves.png'), dpi=150, bbox_inches='tight')
             plt.close()
             print(f"✅ PR曲线已保存至：{os.path.join(path, 'pr_curves.png')}")
-        except ImportError:
-            print("⚠️  缺少matplotlib库，跳过PR曲线生成")
+        except ImportError as e:
+            print(f"⚠️  缺少matplotlib库，跳过PR曲线生成：{e}")
         except Exception as e:
             print(f"⚠️  生成PR曲线失败：{e}")
+            import traceback
+            traceback.print_exc()
 
-    return mAP
+    return mAP, class_ap_dict
 
 
 # -------------------------- 辅助函数 --------------------------
 def get_image_path(image_id, image_dir):
-    """获取图像完整路径（适配多种后缀）"""
-    for suffix in ['.jpg', '.jpeg', '.png', '.bmp', '.tif']:
+    """获取图像完整路径（适配多种后缀，支持大小写不敏感）"""
+    # 首先尝试精确匹配
+    for suffix in ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.JPG', '.JPEG', '.PNG', '.BMP', '.TIF']:
         img_path = os.path.join(image_dir, f"{image_id}{suffix}")
         if os.path.exists(img_path):
             return img_path
+    
+    # 如果精确匹配失败，尝试在目录中搜索（大小写不敏感）
+    if os.path.exists(image_dir):
+        image_id_lower = image_id.lower()
+        for filename in os.listdir(image_dir):
+            filename_base = os.path.splitext(filename)[0]
+            if filename_base.lower() == image_id_lower:
+                # 检查是否是图像文件
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tif']:
+                    return os.path.join(image_dir, filename)
+    
     return None
 
 
@@ -286,19 +341,7 @@ if __name__ == "__main__":
         print(f"🔧 {k}: {v}")
     print("=" * 60)
 
-    # -------------------------- 1. 权重处理 --------------------------
-    if opt.custom_weights:
-        if os.path.exists(opt.custom_weights):
-            opt.weights = opt.custom_weights
-            print(f"\n✅ 使用自定义权重：{opt.weights}")
-        else:
-            print(f"\n⚠️  自定义权重路径不存在：{opt.custom_weights}，将使用默认权重：{opt.weights}")
-
-    # 检查权重文件是否存在（本地权重）
-    if not opt.weights.startswith('yolov8') and not os.path.exists(opt.weights):
-        raise FileNotFoundError(f"❌ 权重文件不存在：{opt.weights}")
-
-    # -------------------------- 2. 加载数据集配置 --------------------------
+    # -------------------------- 1. 加载数据集配置（先加载，因为可能包含权重路径） --------------------------
     if not os.path.exists(opt.data):
         raise FileNotFoundError(f"❌ 数据集配置文件不存在：{opt.data}")
 
@@ -311,9 +354,49 @@ if __name__ == "__main__":
     if not class_names or nc <= 0:
         raise ValueError("❌ 数据集配置文件中未正确配置 'names' 或 'nc' 字段")
 
+    # 从配置文件读取模型权重（如果存在）
+    config_weights = data_cfg.get('weights', None)
+
     print(f"\n✅ 加载数据集配置：")
     print(f"   ├── 类别数：{nc}")
-    print(f"   └── 类别列表：{class_names}")
+    print(f"   ├── 类别列表：{class_names}")
+    if config_weights:
+        print(f"   └── 配置文件中的权重路径：{config_weights}")
+
+    # -------------------------- 2. 权重处理（优先级：命令行custom_weights > 配置文件weights > 命令行weights > 默认值） --------------------------
+    # 确定最终使用的权重路径
+    final_weights = None
+    
+    # 优先级1：命令行指定的custom_weights
+    if opt.custom_weights:
+        if os.path.exists(opt.custom_weights):
+            final_weights = opt.custom_weights
+            print(f"\n✅ 使用命令行指定的自定义权重：{final_weights}")
+        else:
+            print(f"\n⚠️  命令行指定的权重路径不存在：{opt.custom_weights}")
+    
+    # 优先级2：配置文件中的weights（如果命令行没有指定或指定的不存在）
+    if not final_weights and config_weights:
+        if os.path.exists(config_weights):
+            final_weights = config_weights
+            print(f"✅ 使用配置文件中的权重：{final_weights}")
+        else:
+            print(f"⚠️  配置文件中指定的权重路径不存在：{config_weights}")
+    
+    # 优先级3：命令行指定的weights（默认参数）
+    if not final_weights:
+        final_weights = opt.weights
+        if final_weights.startswith('yolov8'):
+            print(f"✅ 使用默认预训练权重：{final_weights}")
+        else:
+            print(f"✅ 使用命令行指定的权重：{final_weights}")
+    
+    # 更新opt.weights为最终确定的权重
+    opt.weights = final_weights
+
+    # 检查权重文件是否存在（本地权重）
+    if not opt.weights.startswith('yolov8') and not os.path.exists(opt.weights):
+        raise FileNotFoundError(f"❌ 权重文件不存在：{opt.weights}")
 
     # -------------------------- 3. 数据集路径配置 --------------------------
     voc_devkit_path = opt.voc_path
@@ -343,6 +426,52 @@ if __name__ == "__main__":
         if not image_ids:
             raise ValueError(f"❌ val.txt 为空，请检查：{val_list_path}")
         print(f"\n✅ 加载验证集：{len(image_ids)} 个图像")
+        
+        # 诊断：检查图像ID匹配情况
+        if os.path.exists(val_image_dir):
+            sample_image_ids = image_ids[:min(10, len(image_ids))]
+            actual_files = [f for f in os.listdir(val_image_dir) 
+                          if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+            print(f"\n📋 诊断信息：")
+            print(f"   val.txt 中的前5个图像ID：{sample_image_ids[:5]}")
+            if actual_files:
+                actual_ids = [os.path.splitext(f)[0] for f in actual_files[:5]]
+                print(f"   图像目录中的前5个文件名：{actual_ids}")
+                # 检查匹配情况
+                matched = sum(1 for img_id in sample_image_ids 
+                            if get_image_path(img_id, val_image_dir) is not None)
+                match_rate = matched / len(sample_image_ids) if sample_image_ids else 0
+                print(f"   匹配情况：{matched}/{len(sample_image_ids)} 个图像ID能找到对应文件 ({match_rate*100:.1f}%)")
+                
+                # 如果匹配率低于30%，提示重新生成val.txt
+                if match_rate < 0.3 and len(actual_files) > 0:
+                    print(f"\n⚠️  警告：图像ID匹配率过低 ({match_rate*100:.1f}%)！")
+                    print(f"   建议：删除 val.txt 文件，让脚本自动从图像目录重新生成")
+                    print(f"   执行命令：rm {val_list_path}")
+                    print(f"   或者：脚本将自动使用实际存在的图像文件")
+                    
+                    # 自动修复：使用实际存在的图像文件
+                    print(f"\n🔄 自动修复：从图像目录重新生成图像ID列表...")
+                    new_image_ids = [os.path.splitext(f)[0] for f in actual_files
+                                   if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+                    new_image_ids = sorted(list(set(new_image_ids)))  # 去重并排序
+                    
+                    if new_image_ids:
+                        # 备份旧的val.txt
+                        backup_path = val_list_path + '.backup'
+                        import shutil
+                        shutil.copy2(val_list_path, backup_path)
+                        print(f"   ✅ 已备份原 val.txt 到 {backup_path}")
+                        
+                        # 写入新的val.txt
+                        with open(val_list_path, 'w', encoding='utf-8') as f:
+                            f.write('\n'.join(new_image_ids))
+                        print(f"   ✅ 已重新生成 val.txt，包含 {len(new_image_ids)} 个图像ID")
+                        image_ids = new_image_ids
+                    else:
+                        print(f"   ⚠️  无法自动修复：图像目录中没有找到有效的图像文件")
+            else:
+                print(f"   ⚠️  图像目录中没有找到图像文件")
 
     # 检查关键目录
     if not os.path.exists(val_image_dir):
@@ -373,10 +502,17 @@ if __name__ == "__main__":
 
         # 批量预测
         success_count = 0
+        not_found_count = 0
+        not_found_ids = []
         for image_id in tqdm(image_ids, desc="生成预测框"):
             img_path = get_image_path(image_id, val_image_dir)
             if not img_path:
-                print(f"\n⚠️  未找到图像：{image_id}，跳过")
+                not_found_count += 1
+                if not_found_count <= 5:  # 只显示前5个未找到的图像
+                    print(f"\n⚠️  未找到图像：{image_id}，跳过")
+                elif not_found_count == 6:
+                    print(f"\n⚠️  ... (还有更多图像未找到，将在最后汇总)")
+                not_found_ids.append(image_id)
                 continue
 
             # 保存可视化图像
@@ -424,6 +560,13 @@ if __name__ == "__main__":
                 continue
 
         print(f"✅ 预测结果生成完成！成功处理 {success_count}/{len(image_ids)} 张图像")
+        if not_found_count > 0:
+            print(f"⚠️  警告：有 {not_found_count} 张图像未找到")
+            if not_found_count <= 10:
+                print(f"   未找到的图像ID：{', '.join(not_found_ids[:10])}")
+            else:
+                print(f"   未找到的图像ID（前10个）：{', '.join(not_found_ids[:10])}...")
+            print(f"   提示：请检查 val.txt 中的图像ID是否与实际图像文件名匹配")
 
     # -------------------------- 6. 生成真实框 --------------------------
     if opt.mode in [0, 2]:
@@ -432,17 +575,23 @@ if __name__ == "__main__":
         print("=" * 50)
 
         success_count = 0
+        not_found_label_count = 0
+        not_found_image_count = 0
         for image_id in tqdm(image_ids, desc="生成真实框"):
             # 读取YOLO标签
             yolo_txt_path = os.path.join(val_label_dir, f"{image_id}.txt")
             if not os.path.exists(yolo_txt_path):
-                print(f"\n⚠️  未找到 YOLO 标签：{image_id}.txt，跳过")
+                not_found_label_count += 1
+                if not_found_label_count <= 5:
+                    print(f"\n⚠️  未找到 YOLO 标签：{image_id}.txt，跳过")
                 continue
 
             # 读取图像尺寸
             img_path = get_image_path(image_id, val_image_dir)
             if not img_path:
-                print(f"\n⚠️  未找到图像：{image_id}，跳过")
+                not_found_image_count += 1
+                if not_found_image_count <= 5:
+                    print(f"\n⚠️  未找到图像：{image_id}，跳过")
                 continue
 
             try:
@@ -505,6 +654,10 @@ if __name__ == "__main__":
                 continue
 
         print(f"✅ 真实框生成完成！成功处理 {success_count}/{len(image_ids)} 个标签")
+        if not_found_label_count > 0:
+            print(f"⚠️  警告：有 {not_found_label_count} 个标签文件未找到")
+        if not_found_image_count > 0:
+            print(f"⚠️  警告：有 {not_found_image_count} 张图像未找到")
 
     # -------------------------- 7. 计算 mAP --------------------------
     if opt.mode in [0, 3]:
@@ -512,7 +665,7 @@ if __name__ == "__main__":
         print("开始计算 mAP...")
         print("=" * 50)
 
-        mAP = get_map(
+        mAP, class_ap_dict = get_map(
             min_overlap=opt.min_overlap,
             visualize=opt.vis,
             path=map_out_path
@@ -522,7 +675,7 @@ if __name__ == "__main__":
         result_path = os.path.join(map_out_path, 'mAP_result.txt')
         with open(result_path, 'w', encoding='utf-8') as f:
             f.write(f"YOLOv8 mAP 评估结果\n")
-            f.write(f"{'=' * 30}\n")
+            f.write(f"{'=' * 50}\n")
             f.write(f"评估时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"模型权重：{opt.weights}\n")
             f.write(f"输入尺寸：{opt.shape}\n")
@@ -530,9 +683,20 @@ if __name__ == "__main__":
             f.write(f"NMS IoU阈值：{opt.nms_iou}\n")
             f.write(f"mAP IoU阈值：{opt.min_overlap}\n")
             f.write(f"验证集图像数：{len(image_ids)}\n")
-            f.write(f"类别列表：{class_names}\n")
-            f.write(f"{'=' * 30}\n")
-            f.write(f"mAP @ {opt.min_overlap} = {mAP:.3f}\n")
+            f.write(f"类别数：{len(class_names)}\n")
+            f.write(f"{'=' * 50}\n\n")
+            
+            # 总体mAP
+            f.write(f"🎯 mAP@{opt.min_overlap} = {mAP:.3f} ({mAP*100:.1f}%)\n\n")
+            
+            # 每个类别的AP
+            f.write(f"{'=' * 50}\n")
+            f.write(f"各类别AP详情：\n")
+            f.write(f"{'=' * 50}\n")
+            for cls_name in class_names:
+                ap_value = class_ap_dict.get(cls_name, 0.0)
+                f.write(f"  {cls_name:20s}: {ap_value:.3f} ({ap_value*100:.1f}%)\n")
+            f.write(f"{'=' * 50}\n")
 
         print(f"\n✅ mAP 结果已保存到：{result_path}")
 

@@ -256,12 +256,15 @@ def get_map(MINOVERLAP=0.5, draw_plot=True, path='./map_out'):
     counter_images_per_class = {}
 
     # 处理真实框
+    skipped_files = []
     for txt_file in ground_truth_files:
         file_id = os.path.splitext(os.path.basename(txt_file))[0]
         dr_file = os.path.join(DR_PATH, f"{file_id}.txt")
 
         if not os.path.exists(dr_file):
-            error(f"未找到对应的检测结果文件: {dr_file}")
+            # 跳过没有对应detection-results文件的ground-truth文件，而不是直接退出
+            skipped_files.append(file_id)
+            continue
 
         lines = file_lines_to_list(txt_file)
         bounding_boxes = []
@@ -308,6 +311,14 @@ def get_map(MINOVERLAP=0.5, draw_plot=True, path='./map_out'):
         with open(temp_gt_path, 'w', encoding='utf-8') as f:
             json.dump(bounding_boxes, f, ensure_ascii=False)
 
+    # 输出跳过的文件信息
+    if skipped_files:
+        print(f"⚠️  警告：跳过了 {len(skipped_files)} 个没有对应detection-results文件的ground-truth文件")
+        if len(skipped_files) <= 10:
+            print(f"   跳过的文件：{', '.join(skipped_files)}")
+        else:
+            print(f"   跳过的文件（前10个）：{', '.join(skipped_files[:10])}...")
+
     # 检查是否有类别
     if not gt_counter_per_class:
         error("未检测到任何有效类别标注!")
@@ -317,6 +328,8 @@ def get_map(MINOVERLAP=0.5, draw_plot=True, path='./map_out'):
     # 处理检测结果
     dr_files = glob.glob(os.path.join(DR_PATH, '*.txt'))
     dr_files.sort()
+    
+    skipped_dr_files = []
 
     for class_name in gt_classes:
         bounding_boxes = []
@@ -325,17 +338,27 @@ def get_map(MINOVERLAP=0.5, draw_plot=True, path='./map_out'):
             gt_file = os.path.join(GT_PATH, f"{file_id}.txt")
 
             if not os.path.exists(gt_file):
-                error(f"未找到对应的真实框文件: {gt_file}")
+                # 跳过没有对应ground-truth文件的detection-results文件
+                if file_id not in skipped_dr_files:
+                    skipped_dr_files.append(file_id)
+                continue
 
             lines = file_lines_to_list(txt_file)
             for line in lines:
                 line_split = line.split()
+                if len(line_split) < 6:
+                    # 跳过格式不正确的行
+                    continue
                 try:
-                    tmp_class_name = parse_class_name(line_split[:-5])
-                    confidence = line_split[-5]
-                    left, top, right, bottom = line_split[-4:]
-                except:
-                    error(f"解析检测文件错误: {txt_file}，行: {line}")
+                    # 检测结果格式：类别名 置信度 x1 y1 x2 y2 (6个字段)
+                    # 类别名是第一个字段，后面5个字段是置信度和坐标
+                    tmp_class_name = line_split[0]
+                    confidence = line_split[1]
+                    left, top, right, bottom = line_split[2:6]
+                except Exception as e:
+                    # 跳过解析失败的行，而不是直接退出
+                    print(f"⚠️  解析检测文件错误: {txt_file}，行: {line}，错误: {e}")
+                    continue
 
                 if tmp_class_name == class_name:
                     bounding_boxes.append({
@@ -349,6 +372,14 @@ def get_map(MINOVERLAP=0.5, draw_plot=True, path='./map_out'):
         temp_dr_path = os.path.join(TEMP_FILES_PATH, f"{class_name}_dr.json")
         with open(temp_dr_path, 'w', encoding='utf-8') as f:
             json.dump(bounding_boxes, f, ensure_ascii=False)
+
+    # 输出跳过的detection-results文件信息
+    if skipped_dr_files:
+        print(f"⚠️  警告：跳过了 {len(skipped_dr_files)} 个没有对应ground-truth文件的detection-results文件")
+        if len(skipped_dr_files) <= 10:
+            print(f"   跳过的文件：{', '.join(skipped_dr_files)}")
+        else:
+            print(f"   跳过的文件（前10个）：{', '.join(skipped_dr_files[:10])}...")
 
     # 计算每个类别的AP
     sum_AP = 0.0

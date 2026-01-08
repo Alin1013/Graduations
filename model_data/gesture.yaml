@@ -5,6 +5,9 @@ labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/labels
 nc: 19
 names: [ "no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","three_two","two_up","two_up_invered"]
 
+# 模型权重配置（用于mAP评估）
+weights: runs/detect/gesture_final_train/weights/best.pt  # 训练好的模型权重路径，如果不存在则使用默认yolov8n.pt
+
 # 新增训练参数
 hyp:
   lr0: 0.001  # 初始学习率

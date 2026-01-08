@@ -32,4 +32,4 @@ ultralytics==8.3.229
 #  streamlit run gesture.streamlit.py
 
 #中断之后跟着训练
-# python3 train.py --epochs 50 --imgsz 640 --device cpu --batch-size 4 --weights ./runs/detect/gesture_final_train/last.pt --resume
+# yolo detect train model=./runs/detect/gesture_final_train/weights/last.pt resume=True epochs=50 imgsz=640 device=cpu batch=4 pretrained=False data=native_data.yaml project=runs/detect name=gesture_final_train exist_ok=True
