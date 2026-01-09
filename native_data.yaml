@@ -1,5 +1,5 @@
 # YOLOv8 原生数据集格式（与gesture.yaml类别一致）
 train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/train
 val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/images/val
-nc: 19
-names: ["no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","three_two","two_up","two_up_invered"]
+nc: 18
+names: ["no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","two_up","two_up_invered"]

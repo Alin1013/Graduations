@@ -1,1 +1,1 @@
-no_gesture,call,like,dislike,ok,fist,four,mute,one,palm,peace,peace_invered,rock,stop,stop_invered,three,three_two,two_up,two_up_invered
+no_gesture,call,like,dislike,ok,fist,four,mute,one,palm,peace,peace_invered,rock,stop,stop_invered,three,two_up,two_up_invered

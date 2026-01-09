@@ -13,8 +13,8 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
 
     # 1. 查看YOLOv8网络结构（基于ultralytics的YOLOv8封装类）
-    # 手势识别类别数为8（根据实际任务调整）
-    num_classes = 8
+    # 手势识别类别数为18
+    num_classes = 18
 
     # 初始化YOLOv8模型（使用自定义类别数）
     yolov8_model = YOLOv8Body(

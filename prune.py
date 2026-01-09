@@ -69,7 +69,7 @@ def load_model_config(config_path='model_data/gesture.yaml'):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
-    num_classes = config.get('nc', 19)
+    num_classes = config.get('nc', 18)
     return num_classes
 
 

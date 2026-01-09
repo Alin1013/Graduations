@@ -50,7 +50,7 @@ MODEL_OPTIONS = {
 
 # 支持的输入尺寸和手势类别
 INPUT_SHAPES = [640, 1280]
-GESTURE_CLASSES = ["one","two_up","two_up_inverted","three","three2","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock","no_gesture"]
+GESTURE_CLASSES = ["one","two_up","two_up_inverted","three","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock","no_gesture"]
 
 # 创建临时目录（存储上传的视频/权重）
 os.makedirs("temp", exist_ok=True)
