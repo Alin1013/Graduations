@@ -2,7 +2,7 @@ task: detect
 mode: train
 model: yolov8n.pt
 data: /Users/alin/Graduation_Project/native_data.yaml
-epochs: 10
+epochs: 50
 time: null
 patience: 10
 batch: 4
@@ -13,7 +13,7 @@ cache: false
 device: cpu
 workers: 4
 project: null
-name: gesture_final_train3
+name: gesture_final_train2
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -103,4 +103,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /Users/alin/Graduation_Project/runs/detect/gesture_final_train3
+save_dir: /Users/alin/Graduation_Project/runs/detect/gesture_final_train2
