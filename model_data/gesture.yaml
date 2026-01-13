@@ -2,8 +2,8 @@
 train: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/yolo_train.txt
 val: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/yolo_val.txt
 labels: /Users/alin/Graduation_Project/VOCdevkit/VOC2026/labels
-nc: 19
-names: [ "no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","three_two","two_up","two_up_invered"]
+nc: 18
+names: [ "no_gesture","call","like","dislike","ok","fist","four","mute","one","palm","peace","peace_invered","rock","stop","stop_invered","three","two_up","two_up_invered"]
 
 # 模型权重配置（用于mAP评估）
 weights: runs/detect/gesture_final_train/weights/best.pt
