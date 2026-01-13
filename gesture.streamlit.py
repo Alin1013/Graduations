@@ -1,9 +1,5 @@
-"""手势检测web平台"""
 import os
-import time
-import cv2
 import numpy as np
-import torch
 from PIL import Image
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
@@ -116,66 +112,10 @@ class VideoProcessor:
             img = results[0].plot()
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-def calculate_fps(model, input_shape):
-    """计算模型推理FPS"""
-    if model is None:
-        return 0.0
-    try:
-        test_img = np.zeros((input_shape, input_shape, 3), dtype=np.uint8)
-        start_time = time.time()
-        # 多次推理取平均
-        for _ in range(10):
-            model.predict(test_img, imgsz=input_shape, verbose=False)
-        elapsed = time.time() - start_time
-        return 10 / elapsed
-    except Exception as e:
-        st.error(f"FPS计算失败: {str(e)}")
-        return 0.0
-
-def process_video(model, video_path, input_shape):
-    """处理上传的视频并保存结果"""
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    # 输出视频路径
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = f"temp/gesture_detection_{timestamp}.mp4"
-
-    # 视频编码器
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
-
-    # 处理进度条
-    progress_bar = st.progress(0)
-    frame_idx = 0
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # 检测并绘制结果
-        results = model.predict(frame, imgsz=input_shape, verbose=False)
-        result_frame = results[0].plot()
-        out.write(result_frame)
-
-        # 更新进度
-        frame_idx += 1
-        progress_bar.progress(min(frame_idx / frame_count, 1.0))
-
-    # 释放资源
-    cap.release()
-    out.release()
-    progress_bar.empty()
-    return output_path
-
 # -------------------------- 主应用函数 --------------------------
 def main():
     st.title("✌️ 手势检测平台")
-    st.markdown("基于YOLOv8的实时手势检测系统 | 支持图像/摄像头/视频三种检测模式")
+    st.markdown("基于YOLOv8的实时手势检测系统 | 支持图像/摄像头两种检测模式")
 
     # 侧边栏配置
     with st.sidebar:
@@ -184,7 +124,7 @@ def main():
         # 1. 应用模式选择
         app_mode = st.selectbox(
             "选择功能模式",
-            ["图像检测", "实时摄像头", "视频上传", "性能测试", "关于"]
+            ["图像检测", "实时摄像头","关于"]
         )
 
         # 2. 模型设置
@@ -312,65 +252,6 @@ def main():
                 async_processing=True,
             )
 
-    elif app_mode == "视频上传":
-        st.subheader("🎥 视频上传检测")
-        st.warning("提示：视频处理时间取决于视频长度和设备性能，建议先测试短视频（<1分钟）")
-
-        uploaded_video = st.file_uploader("选择视频文件", type=["mp4", "mov", "avi"])
-        if uploaded_video is not None:
-            # 保存上传的视频到临时文件
-            temp_video_path = "temp/uploaded_video.mp4"
-            with open(temp_video_path, "wb") as f:
-                f.write(uploaded_video.read())
-
-            # 显示视频信息
-            cap = cv2.VideoCapture(temp_video_path)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = frame_count / fps if fps > 0 else 0
-            st.info(f"视频信息：{fps:.1f} FPS | {frame_count} 帧 | 时长：{duration:.1f} 秒")
-            cap.release()
-
-            # 显示原始视频预览
-            st.subheader("原始视频预览")
-            st.video(temp_video_path)
-
-            # 处理视频按钮
-            if st.button("开始处理视频"):
-                with st.spinner("正在处理视频..."):
-                    output_path = process_video(model, temp_video_path, input_shape)
-                    st.success("✅ 视频处理完成！")
-
-                    # 显示处理结果
-                    st.subheader("处理结果预览")
-                    st.video(output_path)
-
-                    # 下载按钮
-                    with open(output_path, "rb") as f:
-                        st.download_button(
-                            label="下载处理后的视频",
-                            data=f,
-                            file_name=f"gesture_detection_{datetime.now().strftime('%Y%m%d')}.mp4",
-                            mime="video/mp4"
-                        )
-
-    elif app_mode == "性能测试":
-        st.subheader("⚡ 模型性能测试")
-        st.write("测试当前模型在设备上的推理速度（FPS），结果仅供参考")
-
-        if st.button("开始测试FPS"):
-            with st.spinner("正在测试性能..."):
-                fps = calculate_fps(model, input_shape)
-                st.success(f"测试完成！平均FPS：{fps:.2f} 帧/秒")
-
-                # 性能评估
-                if fps < 10:
-                    st.warning("性能较低，建议优化：\n1. 选择更小的模型（如yolov8n）\n2. 降低输入尺寸（如640x640）\n3. 使用GPU加速")
-                elif fps < 25:
-                    st.info("性能中等，可满足基本实时检测需求")
-                else:
-                    st.success("性能优异，适合高质量实时检测！")
-
     elif app_mode == "关于":
         st.subheader("📋 关于本平台")
         st.markdown("""
@@ -379,8 +260,6 @@ def main():
         **核心功能**：
         - 图像检测：单张图像手势识别
         - 实时摄像头：浏览器端实时手势跟踪
-        - 视频上传：批量处理视频并保存检测结果
-        - 性能测试：评估模型在当前设备的运行速度
         
         **技术栈**：
         - 目标检测：YOLOv8（Ultralytics）

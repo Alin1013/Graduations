@@ -689,13 +689,18 @@ if __name__ == "__main__":
             # 总体mAP
             f.write(f"🎯 mAP@{opt.min_overlap} = {mAP:.3f} ({mAP*100:.1f}%)\n\n")
             
-            # 每个类别的AP
+            # 每个类别的AP（只显示有真实框的类别）
             f.write(f"{'=' * 50}\n")
             f.write(f"各类别AP详情：\n")
             f.write(f"{'=' * 50}\n")
+            # 按class_names顺序显示，但只显示有真实框的类别
             for cls_name in class_names:
-                ap_value = class_ap_dict.get(cls_name, 0.0)
-                f.write(f"  {cls_name:20s}: {ap_value:.3f} ({ap_value*100:.1f}%)\n")
+                if cls_name in class_ap_dict:
+                    ap_value = class_ap_dict[cls_name]
+                    f.write(f"  {cls_name:20s}: {ap_value:.3f} ({ap_value*100:.1f}%)\n")
+                else:
+                    # 标记没有真实框的类别
+                    f.write(f"  {cls_name:20s}: 0.000 (0.0%) [无真实框标注]\n")
             f.write(f"{'=' * 50}\n")
 
         print(f"\n✅ mAP 结果已保存到：{result_path}")
