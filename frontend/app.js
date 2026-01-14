@@ -1,5 +1,5 @@
 // 前端应用主文件
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8001';  // 与后端端口一致
 
 let currentVideoId = null;
 

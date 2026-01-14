@@ -1,6 +1,6 @@
 # 后端依赖包
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
+uvicorn==0.24.0  # 移除[standard]扩展以避免SSL证书问题，如需性能优化可单独安装httptools
 python-multipart==0.0.6
 sqlalchemy==2.0.23
 pydantic==2.5.0
