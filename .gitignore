@@ -35,6 +35,11 @@ wheels/
 
 # 深度学习相关
 *.ckpt
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
 
 # IDE配置
 .idea/
@@ -61,4 +66,9 @@ temp/
 
 #数据集文件太多，上传时间过长还可能会崩溃
 VOCdevkit/
+
+#视频分析文件
+temp/
+
+
 
