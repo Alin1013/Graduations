@@ -4,8 +4,19 @@ import torch
 import torch.nn.utils.prune as prune
 import numpy as np
 import argparse
-from nets.yolov8 import YOLOv8
-from utils.utils import get_anchors
+import yaml
+
+try:
+    from nets.yolov8 import YOLOv8
+except ImportError as e:
+    print(f"❌ 导入YOLOv8模型失败: {e}")
+    exit(1)
+
+try:
+    from utils.utils import get_anchors
+except ImportError as e:
+    print(f"❌ 导入get_anchors函数失败: {e}")
+    exit(1)
 
 
 def prune_model(model, pruning_ratio=0.3, method='l1_unstructured'):
@@ -60,17 +71,27 @@ def prune_model(model, pruning_ratio=0.3, method='l1_unstructured'):
 
 
 def load_model_config(config_path='model_data/gesture.yaml'):
-    """从配置文件加载模型参数"""
-    import yaml
-    
+    """
+    从配置文件加载模型参数
+    :param config_path: 配置文件路径
+    :return: 类别数量
+    """
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+        raise FileNotFoundError(f"❌ 配置文件不存在: {config_path}")
     
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-    
-    num_classes = config.get('nc', 18)
-    return num_classes
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        num_classes = config.get('nc', 18)
+        if num_classes <= 0:
+            raise ValueError(f"❌ 无效的类别数: {num_classes}")
+        
+        return num_classes
+    except yaml.YAMLError as e:
+        raise ValueError(f"❌ 配置文件解析失败: {e}")
+    except Exception as e:
+        raise RuntimeError(f"❌ 加载配置文件失败: {e}")
 
 
 # 剪枝流程示例
@@ -97,9 +118,14 @@ if __name__ == "__main__":
     
     # 检查输入文件
     if not os.path.exists(opt.model_path):
-        raise FileNotFoundError(f"❌ 模型文件不存在: {opt.model_path}")
+        print(f"❌ 模型文件不存在: {opt.model_path}")
+        exit(1)
     if not os.path.exists(opt.anchors_path):
-        raise FileNotFoundError(f"❌ Anchors文件不存在: {opt.anchors_path}")
+        print(f"❌ Anchors文件不存在: {opt.anchors_path}")
+        exit(1)
+    if not os.path.exists(opt.config_path):
+        print(f"❌ 配置文件不存在: {opt.config_path}")
+        exit(1)
     
     # 创建输出目录
     output_dir = os.path.dirname(opt.output_path)
@@ -111,37 +137,66 @@ if __name__ == "__main__":
     print("=" * 60)
     print("YOLOv8 模型剪枝工具")
     print("=" * 60)
-    num_classes = load_model_config(opt.config_path)
-    print(f"📊 类别数: {num_classes}")
+    
+    try:
+        num_classes = load_model_config(opt.config_path)
+        print(f"✅ 类别数: {num_classes}")
+    except Exception as e:
+        print(f"❌ 加载配置失败: {e}")
+        exit(1)
     
     # 加载anchors
-    anchors, num_anchors = get_anchors(opt.anchors_path)
-    anchors = anchors.tolist()  # 转换为列表格式
-    print(f"📊 Anchors数量: {num_anchors}")
-    print(f"📊 Anchors: {anchors}")
+    try:
+        anchors, num_anchors = get_anchors(opt.anchors_path)
+        anchors = anchors.tolist()  # 转换为列表格式
+        print(f"✅ Anchors数量: {num_anchors}")
+        print(f"✅ Anchors: {anchors}")
+    except Exception as e:
+        print(f"❌ 加载Anchors失败: {e}")
+        exit(1)
     
     # 设置设备
-    device = torch.device(opt.device if torch.cuda.is_available() and opt.device == 'cuda' else 'cpu')
-    print(f"📊 运行设备: {device}")
+    if opt.device == 'cuda' and not torch.cuda.is_available():
+        print("⚠️  CUDA不可用，使用CPU")
+        device = torch.device('cpu')
+    else:
+        device = torch.device(opt.device if opt.device == 'cuda' and torch.cuda.is_available() else 'cpu')
+    print(f"✅ 运行设备: {device}")
     print("=" * 60)
     
     # 初始化模型
     print(f"\n🔄 初始化模型...")
-    model = YOLOv8(
-        num_classes=num_classes,
-        anchors=anchors,
-        input_shape=[640, 640],
-        cuda=(device.type == 'cuda')
-    )
+    try:
+        model = YOLOv8(
+            num_classes=num_classes,
+            anchors=anchors,
+            input_shape=[640, 640],
+            cuda=(device.type == 'cuda')
+        )
+        print("✅ 模型初始化成功")
+    except Exception as e:
+        print(f"❌ 模型初始化失败: {e}")
+        exit(1)
     
     # 加载预训练权重
     print(f"🔄 加载预训练模型: {opt.model_path}")
     try:
         state_dict = torch.load(opt.model_path, map_location=device)
-        model.load_state_dict(state_dict)
-        print("✅ 模型权重加载成功")
+        # 处理可能的键名不匹配问题
+        model_dict = model.state_dict()
+        # 过滤掉不匹配的键
+        pretrained_dict = {k: v for k, v in state_dict.items() 
+                          if k in model_dict and model_dict[k].shape == v.shape}
+        if len(pretrained_dict) == 0:
+            print("⚠️  警告: 没有找到匹配的权重，使用随机初始化")
+        else:
+            model_dict.update(pretrained_dict)
+            model.load_state_dict(model_dict)
+            print(f"✅ 模型权重加载成功 ({len(pretrained_dict)}/{len(model_dict)} 层)")
     except Exception as e:
-        raise RuntimeError(f"❌ 模型权重加载失败: {e}")
+        print(f"❌ 模型权重加载失败: {e}")
+        print("   提示: 检查模型结构和权重文件是否匹配")
+        exit(1)
     
     # 将模型移到指定设备
     model = model.to(device)
@@ -149,12 +204,24 @@ if __name__ == "__main__":
     
     # 剪枝
     print(f"\n🔄 开始剪枝（比例: {opt.pruning_ratio*100:.1f}%, 方法: {opt.method}）...")
-    pruned_model = prune_model(model, pruning_ratio=opt.pruning_ratio, method=opt.method)
+    try:
+        pruned_model = prune_model(model, pruning_ratio=opt.pruning_ratio, method=opt.method)
+    except Exception as e:
+        print(f"❌ 剪枝过程失败: {e}")
+        exit(1)
     
     # 保存剪枝后的模型
     print(f"\n🔄 保存剪枝后的模型: {opt.output_path}")
-    torch.save(pruned_model.state_dict(), opt.output_path)
-    print("✅ 剪枝后的模型已保存")
+    try:
+        torch.save(pruned_model.state_dict(), opt.output_path)
+        print("✅ 剪枝后的模型已保存")
+        
+        # 计算文件大小
+        file_size = os.path.getsize(opt.output_path) / (1024 * 1024)  # MB
+        print(f"✅ 模型文件大小: {file_size:.2f} MB")
+    except Exception as e:
+        print(f"❌ 保存模型失败: {e}")
+        exit(1)
     
     print("\n" + "=" * 60)
     print("🎉 剪枝流程完成！")
