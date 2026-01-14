@@ -18,44 +18,17 @@ except ImportError as e:
 
 def init_yolo(opt):
     """
-    初始化YOLO模型（修复参数传递问题）
+    初始化YOLO模型
     :param opt: 命令行参数对象
     :return: YOLO模型实例
     """
     try:
-        # 创建YOLO模型配置字典（避免直接传递opt对象导致的属性错误）
-        yolo_config = {
-            "weights": opt.weights,
-            "tiny": opt.tiny,
-            "phi": opt.phi,
-            "cuda": opt.cuda,
-            "shape": opt.shape,
-            "confidence": opt.confidence,
-            "nms_iou": opt.nms_iou
-        }
-
-        # 初始化YOLO模型（适配不同的初始化方式）
-        if hasattr(YOLO, '__init__'):
-            # 如果YOLO类需要配置字典参数
-            yolo = YOLO(yolo_config)
-        else:
-            # 兼容原有的opt参数方式
-            yolo = YOLO(opt)
-
-        return yolo
-    except AttributeError as e:
-        print(f"初始化YOLO模型失败: {e}")
-        print("尝试使用简化模式初始化...")
-        # 简化模式：直接传递权重路径
-        yolo = YOLO(opt.weights)
-        # 手动设置其他参数
-        yolo.conf = opt.confidence
-        yolo.iou = opt.nms_iou
-        yolo.device = "cuda" if opt.cuda else "cpu"
-        yolo.imgsz = opt.shape
+        # YOLO类期望接收opt对象，使用getattr获取属性
+        yolo = YOLO(opt)
         return yolo
     except Exception as e:
-        print(f"初始化YOLO模型出错: {str(e)}")
+        print(f"❌ 初始化YOLO模型失败: {e}")
+        print(f"   错误详情: {type(e).__name__}")
         exit(1)
 
 
@@ -130,7 +103,7 @@ if __name__ == "__main__":
     onnx_save_path = "model_data/models.onnx"
 
     # -------------------------- 单张图片预测模式 --------------------------
-    if mode == "predict":
+    if opt.mode == "predict":
         print("\n📸 单张图片预测模式")
         print("提示：输入 'q' 退出，输入图片路径进行预测")
         while True:
@@ -159,7 +132,7 @@ if __name__ == "__main__":
                 continue
 
     # -------------------------- 视频检测模式 --------------------------
-    elif mode == "video":
+    elif opt.mode == "video":
         print(f"\n🎥 视频检测模式")
         print(f"视频源: {video_path if video_path != 0 else '摄像头'}")
 
@@ -240,7 +213,7 @@ if __name__ == "__main__":
         print("✅ 视频检测完成")
 
     # -------------------------- FPS测试模式 --------------------------
-    elif mode == "fps":
+    elif opt.mode == "fps":
         print(f"\n⚡ FPS测试模式")
         print(f"测试图片: {fps_image_path}")
         print(f"测试次数: {test_interval}")
@@ -274,7 +247,7 @@ if __name__ == "__main__":
             exit(1)
 
     # -------------------------- 目录批量预测模式 --------------------------
-    elif mode == "dir_predict":
+    elif opt.mode == "dir_predict":
         print(f"\n📁 目录批量预测模式")
         print(f"输入目录: {dir_origin_path}")
         print(f"输出目录: {dir_save_path}")
@@ -326,7 +299,7 @@ if __name__ == "__main__":
         print(f"结果保存至: {dir_save_path}")
 
     # -------------------------- 热力图模式 --------------------------
-    elif mode == "heatmap":
+    elif opt.mode == "heatmap":
         print("\n🔥 热力图可视化模式")
         try:
             # 这里需要根据YOLO类的实际实现调整
@@ -339,7 +312,7 @@ if __name__ == "__main__":
             print(f"❌ 生成热力图失败: {e}")
 
     # -------------------------- ONNX导出模式 --------------------------
-    elif mode == "export_onnx":
+    elif opt.mode == "export_onnx":
         print("\n📦 ONNX模型导出模式")
         try:
             # 这里需要根据YOLO类的实际实现调整
@@ -367,6 +340,6 @@ if __name__ == "__main__":
             print(f"❌ 导出ONNX失败: {e}")
 
     else:
-        print(f"❌ 不支持的模式: {mode}")
+        print(f"❌ 不支持的模式: {opt.mode}")
         print("支持的模式: dir_predict, video, fps, predict, heatmap, export_onnx")
         exit(1)
