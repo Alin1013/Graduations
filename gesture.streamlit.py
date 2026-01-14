@@ -1,5 +1,9 @@
+"""手势检测web平台"""
 import os
+import time
+import cv2
 import numpy as np
+import torch
 from PIL import Image
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
@@ -7,6 +11,9 @@ import av
 from ultralytics import YOLO
 import ssl
 from datetime import datetime
+import json
+import pandas as pd
+import io
 
 # 全局禁用SSL证书验证（解决模型下载HTTPS问题）
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -30,23 +37,18 @@ RTC_CONFIGURATION = RTCConfiguration({
 # 请在这里修改为你的本地模型文件路径
 LOCAL_MODEL_PATHS = {
     "yolov8n.pt": "/Users/alin/Graduation_Project/yolov8n.pt",  # 替换为实际本地路径
-    "yolov8s.pt": "/Users/alin/Graduation_Project/yolov8s.pt",  # 替换为实际本地路径
-    "yolov8m.pt": "/Users/alin/Graduation_Project/yolov8m.pt",  # 替换为实际本地路径
-    "yolov8l.pt": "/Users/alin/Graduation_Project/yolov8l.pt",  # 替换为实际本地路径
+
     "best.pt":"runs/detect/gesture_final_train/weights/best.pt",
 }
 
 MODEL_OPTIONS = {
-    "yolov8n.pt": {"name": "目标识别-Nano (最快)", "local_path": LOCAL_MODEL_PATHS["yolov8n.pt"], "is_custom": False},
-    "yolov8s.pt": {"name": "目标识别-Small (平衡)", "local_path": LOCAL_MODEL_PATHS["yolov8s.pt"], "is_custom": False},
-    "yolov8m.pt": {"name": "目标识别-Medium (高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8m.pt"], "is_custom": False},
-    "yolov8l.pt": {"name": "目标识别-Large (超高精度)", "local_path": LOCAL_MODEL_PATHS["yolov8l.pt"], "is_custom": False},
-    "custom_weight": {"name": "手势识别-Best (训练权重)", "local_path": LOCAL_MODEL_PATHS["best.pt"], "is_custom": False},  # 自定义权重占位符
+    "yolov8n.pt": {"name": "目标识别", "local_path": LOCAL_MODEL_PATHS["yolov8n.pt"], "is_custom": False},
+    "custom_weight": {"name": "手势识别 ", "local_path": LOCAL_MODEL_PATHS["best.pt"], "is_custom": False},  # 自定义权重占位符
 }
 
 # 支持的输入尺寸和手势类别
 INPUT_SHAPES = [640, 1280]
-GESTURE_CLASSES = ["one","two_up","two_up_inverted","three","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock","no_gesture"]
+GESTURE_CLASSES = ["one","two_up","two_up_inverted","three","three2","four","fist","palm","ok","peace","loke","dislike","stop","stop_inverted","call","mute","rock"]
 
 # 创建临时目录（存储上传的视频/权重）
 os.makedirs("temp", exist_ok=True)
@@ -89,33 +91,205 @@ def load_model(model_key, conf_threshold, nms_threshold, custom_weight_path=None
 
 # -------------------------- 检测相关函数 --------------------------
 def detect_image(model, image, input_shape):
-    """单张图像检测"""
+    """单张图像检测，返回检测结果图像和详细信息"""
     if model is None:
-        return None
+        return None, None
     try:
         results = model.predict(image, imgsz=input_shape, verbose=False)
-        return results[0].plot()  # 绘制检测框和类别
+        result_img = results[0].plot()  # 绘制检测框和类别
+        
+        # 提取检测结果详情
+        detections = []
+        if results[0].boxes is not None:
+            boxes = results[0].boxes
+            for box in boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                
+                # 获取类别名称
+                cls_name = model.names[cls_id] if hasattr(model, 'names') else f"class_{cls_id}"
+                
+                detections.append({
+                    "class_id": cls_id,
+                    "class_name": cls_name,
+                    "confidence": conf,
+                    "bbox": {
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2
+                    }
+                })
+        
+        return result_img, detections
     except Exception as e:
         st.error(f"图像检测失败: {str(e)}")
-        return None
+        return None, None
 
 class VideoProcessor:
     """实时摄像头视频处理类"""
     def __init__(self, model, input_shape):
         self.model = model
         self.input_shape = input_shape
+        self.frame_count = 0
+        self.last_frame = None
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
         if self.model:
             results = self.model.predict(img, imgsz=self.input_shape, verbose=False)
             img = results[0].plot()
+        self.last_frame = img.copy()  # 保存最后一帧用于截图
+        self.frame_count += 1
         return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+def calculate_fps(model, input_shape):
+    """计算模型推理FPS"""
+    if model is None:
+        return 0.0
+    try:
+        test_img = np.zeros((input_shape, input_shape, 3), dtype=np.uint8)
+        start_time = time.time()
+        # 多次推理取平均
+        for _ in range(10):
+            model.predict(test_img, imgsz=input_shape, verbose=False)
+        elapsed = time.time() - start_time
+        return 10 / elapsed
+    except Exception as e:
+        st.error(f"FPS计算失败: {str(e)}")
+        return 0.0
+
+def process_video(model, video_path, input_shape):
+    """处理上传的视频并保存结果，返回视频路径和检测统计信息"""
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # 确保fps有效
+    if fps <= 0:
+        fps = 25.0
+
+    # 输出视频路径（使用绝对路径）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.abspath("temp")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"gesture_detection_{timestamp}.mp4")
+
+    # 视频编码器（尝试多种编码格式以提高兼容性）
+    # 优先使用H.264编码，如果不支持则使用XVID或mp4v
+    fourcc = None
+    test_path = output_path + ".test"
+    
+    for codec in ['avc1', 'H264', 'XVID', 'mp4v']:
+        try:
+            test_fourcc = cv2.VideoWriter_fourcc(*codec)
+            # 测试编码器是否可用
+            test_writer = cv2.VideoWriter(test_path, test_fourcc, fps, (frame_width, frame_height))
+            if test_writer.isOpened():
+                test_writer.release()
+                # 删除测试文件
+                if os.path.exists(test_path):
+                    os.remove(test_path)
+                fourcc = test_fourcc
+                break
+        except Exception:
+            # 清理测试文件
+            if os.path.exists(test_path):
+                try:
+                    os.remove(test_path)
+                except:
+                    pass
+            continue
+    
+    if fourcc is None:
+        # 如果所有编码器都失败，使用默认的mp4v
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+    
+    if not out.isOpened():
+        # 尝试使用更通用的编码格式
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+        if not out.isOpened():
+            raise RuntimeError(f"无法创建视频文件：{output_path}，请检查系统是否支持视频编码")
+
+    # 处理进度条
+    progress_bar = st.progress(0)
+    frame_idx = 0
+    
+    # 统计信息
+    detection_stats = {
+        "total_frames": frame_count,
+        "detected_frames": 0,
+        "total_detections": 0,
+        "class_counts": {},
+        "frame_detections": []  # 每帧的检测结果
+    }
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # 检测并绘制结果
+        results = model.predict(frame, imgsz=input_shape, verbose=False)
+        result_frame = results[0].plot()
+        out.write(result_frame)
+        
+        # 统计检测结果
+        frame_detections = []
+        if results[0].boxes is not None:
+            detection_stats["detected_frames"] += 1
+            for box in results[0].boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                cls_name = model.names[cls_id] if hasattr(model, 'names') else f"class_{cls_id}"
+                
+                detection_stats["total_detections"] += 1
+                detection_stats["class_counts"][cls_name] = detection_stats["class_counts"].get(cls_name, 0) + 1
+                
+                frame_detections.append({
+                    "frame": frame_idx,
+                    "class_name": cls_name,
+                    "confidence": conf
+                })
+        
+        detection_stats["frame_detections"].append({
+            "frame": frame_idx,
+            "detections": frame_detections
+        })
+
+        # 更新进度
+        frame_idx += 1
+        progress_bar.progress(min(frame_idx / frame_count, 1.0))
+
+    # 释放资源
+    cap.release()
+    out.release()
+    progress_bar.empty()
+    
+    # 确保视频文件完全写入
+    import time
+    time.sleep(0.5)  # 等待文件系统同步
+    
+    # 验证文件是否存在且可读
+    if not os.path.exists(output_path):
+        raise FileNotFoundError(f"视频文件未成功创建：{output_path}")
+    
+    file_size = os.path.getsize(output_path)
+    if file_size == 0:
+        raise RuntimeError(f"视频文件为空：{output_path}")
+    
+    return output_path, detection_stats
 
 # -------------------------- 主应用函数 --------------------------
 def main():
     st.title("✌️ 手势检测平台")
-    st.markdown("基于YOLOv8的实时手势检测系统 | 支持图像/摄像头两种检测模式")
+    st.markdown("基于YOLOv8的实时手势检测系统 | 支持图像/摄像头/视频三种检测模式")
 
     # 侧边栏配置
     with st.sidebar:
@@ -124,7 +298,7 @@ def main():
         # 1. 应用模式选择
         app_mode = st.selectbox(
             "选择功能模式",
-            ["图像检测", "实时摄像头","关于"]
+            ["图像检测", "实时摄像头", "视频上传", "性能测试", "关于"]
         )
 
         # 2. 模型设置
@@ -225,24 +399,102 @@ def main():
 
             with col1:
                 st.info("原始图像")
-                st.image(image, use_column_width=True)
+                st.image(image, use_container_width=True)
 
             # 检测按钮
             if st.button("开始检测"):
                 with st.spinner("正在处理图像..."):
                     img_array = np.array(image)
-                    result_img = detect_image(model, img_array, input_shape)
+                    result_img, detections = detect_image(model, img_array, input_shape)
 
                     with col2:
                         st.success("检测结果")
                         if result_img is not None:
-                            st.image(result_img, use_column_width=True)
+                            st.image(result_img, use_container_width=True)
+                            
+                            # 保存检测结果到session state
+                            st.session_state["last_detection_result"] = {
+                                "image": result_img,
+                                "detections": detections,
+                                "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S")
+                            }
+                            
+                            # 显示检测统计
+                            if detections:
+                                st.info(f"检测到 {len(detections)} 个目标")
+                                for det in detections:
+                                    st.write(f"- {det['class_name']}: {det['confidence']:.2%}")
+                            
+            # 导出功能
+            if "last_detection_result" in st.session_state:
+                st.markdown("---")
+                st.subheader("📥 导出检测结果")
+                result_data = st.session_state["last_detection_result"]
+                
+                col_export1, col_export2, col_export3 = st.columns(3)
+                
+                with col_export1:
+                    # 导出检测后的图像
+                    result_img = result_data["image"]
+                    img_pil = Image.fromarray(result_img)
+                    img_bytes = io.BytesIO()
+                    img_pil.save(img_bytes, format='PNG')
+                    img_bytes.seek(0)
+                    st.download_button(
+                        label="📷 下载检测图像 (PNG)",
+                        data=img_bytes,
+                        file_name=f"detection_result_{result_data['timestamp']}.png",
+                        mime="image/png"
+                    )
+                
+                with col_export2:
+                    # 导出JSON格式的检测结果
+                    if result_data["detections"]:
+                        json_data = {
+                            "timestamp": result_data["timestamp"],
+                            "total_detections": len(result_data["detections"]),
+                            "detections": result_data["detections"]
+                        }
+                        json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
+                        st.download_button(
+                            label="📄 下载检测结果 (JSON)",
+                            data=json_str.encode('utf-8'),
+                            file_name=f"detection_result_{result_data['timestamp']}.json",
+                            mime="application/json"
+                        )
+                
+                with col_export3:
+                    # 导出CSV格式的检测结果
+                    if result_data["detections"]:
+                        df = pd.DataFrame(result_data["detections"])
+                        csv_str = df.to_csv(index=False)
+                        st.download_button(
+                            label="📊 下载检测结果 (CSV)",
+                            data=csv_str.encode('utf-8'),
+                            file_name=f"detection_result_{result_data['timestamp']}.csv",
+                            mime="text/csv"
+                        )
 
     elif app_mode == "实时摄像头":
         st.subheader("📹 实时摄像头检测")
         st.info("点击下方区域启动摄像头（首次使用需授予浏览器权限）")
+        
+        # 截图说明
+        with st.expander("📸 如何保存检测结果"):
+            st.markdown("""
+            **实时摄像头检测结果保存方法：**
+            1. **浏览器截图**：使用浏览器自带的截图功能（Windows: Win+Shift+S, Mac: Cmd+Shift+4）
+            2. **系统截图工具**：使用系统自带的截图工具
+            3. **录制视频**：使用系统屏幕录制功能（Windows: Win+G, Mac: Cmd+Shift+5）
+            
+            **提示**：实时检测结果会持续更新，建议在检测到目标时及时截图保存。
+            """)
 
         if model:
+            # 创建VideoProcessor实例并保存到session state以便后续使用
+            if "video_processor" not in st.session_state:
+                st.session_state["video_processor"] = VideoProcessor(model, input_shape)
+            
             webrtc_streamer(
                 key="gesture-detection",
                 mode=WebRtcMode.SENDRECV,
@@ -251,6 +503,269 @@ def main():
                 media_stream_constraints={"video": True, "audio": False},
                 async_processing=True,
             )
+            
+            # 添加使用说明
+            st.markdown("---")
+            st.subheader("💡 使用提示")
+            st.info("""
+            - 实时检测结果会显示在视频流中
+            - 检测框会实时标注识别到的手势类别
+            - 建议在光线充足的环境下使用，提高检测准确率
+            - 手势尽量清晰可见，避免复杂背景干扰
+            """)
+
+    elif app_mode == "视频上传":
+        st.subheader("🎥 视频上传检测")
+        st.warning("提示：视频处理时间取决于视频长度和设备性能，建议先测试短视频（<1分钟）")
+
+        uploaded_video = st.file_uploader("选择视频文件", type=["mp4", "mov", "avi"])
+        if uploaded_video is not None:
+            # 保存上传的视频到临时文件（使用时间戳生成安全的文件名，避免中文文件名导致的403错误）
+            temp_dir = os.path.abspath("temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            # 使用时间戳生成唯一文件名，避免中文文件名问题
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            # 获取原始文件扩展名
+            original_name = uploaded_video.name if hasattr(uploaded_video, 'name') else "video"
+            file_ext = os.path.splitext(original_name)[1] if '.' in original_name else ".mp4"
+            if not file_ext or file_ext.lower() not in ['.mp4', '.mov', '.avi']:
+                file_ext = '.mp4'
+            temp_video_path = os.path.join(temp_dir, f"uploaded_video_{timestamp}{file_ext}")
+            
+            # 保存文件
+            with open(temp_video_path, "wb") as f:
+                f.write(uploaded_video.read())
+            
+            # 显示原始文件名（如果有中文，只显示不用于路径）
+            if hasattr(uploaded_video, 'name') and uploaded_video.name:
+                st.info(f"📁 已上传文件：{uploaded_video.name}")
+
+            # 显示视频信息
+            cap = cv2.VideoCapture(temp_video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            st.info(f"视频信息：{fps:.1f} FPS | {frame_count} 帧 | 时长：{duration:.1f} 秒")
+            cap.release()
+
+            # 显示原始视频预览（使用文件对象，避免中文路径问题）
+            st.subheader("原始视频预览")
+            try:
+                # 直接使用上传的文件对象，避免文件路径问题
+                uploaded_video.seek(0)  # 重置文件指针到开头
+                video_bytes = uploaded_video.read()
+                st.video(video_bytes)
+            except Exception as e:
+                # 如果直接读取失败，尝试从保存的文件读取
+                try:
+                    with open(temp_video_path, 'rb') as video_file:
+                        video_bytes = video_file.read()
+                        st.video(video_bytes)
+                except Exception as e2:
+                    st.warning(f"视频预览失败：{str(e2)}")
+                    st.info("视频文件已上传，可以继续处理")
+
+            # 处理视频按钮
+            if st.button("开始处理视频"):
+                with st.spinner("正在处理视频..."):
+                    output_path, detection_stats = process_video(model, temp_video_path, input_shape)
+                    st.success("✅ 视频处理完成！")
+                    
+                    # 保存统计信息到session state
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    st.session_state["last_video_result"] = {
+                        "video_path": output_path,
+                        "stats": detection_stats,
+                        "timestamp": timestamp
+                    }
+
+                    # 显示检测统计
+                    st.subheader("📊 检测统计")
+                    col_stat1, col_stat2, col_stat3 = st.columns(3)
+                    with col_stat1:
+                        st.metric("总帧数", detection_stats["total_frames"])
+                    with col_stat2:
+                        st.metric("检测到目标的帧数", detection_stats["detected_frames"])
+                    with col_stat3:
+                        st.metric("总检测数", detection_stats["total_detections"])
+                    
+                    if detection_stats["class_counts"]:
+                        st.write("**各类别检测统计：**")
+                        for cls_name, count in sorted(detection_stats["class_counts"].items(), key=lambda x: x[1], reverse=True):
+                            st.write(f"- {cls_name}: {count} 次")
+
+                    # 导出功能
+                    st.markdown("---")
+                    st.subheader("📥 导出检测结果")
+                    col_video1, col_video2, col_video3 = st.columns(3)
+                    
+                    with col_video1:
+                        # 下载处理后的视频
+                        with open(output_path, "rb") as f:
+                            st.download_button(
+                                label="🎥 下载处理后的视频",
+                                data=f,
+                                file_name=f"gesture_detection_{timestamp}.mp4",
+                                mime="video/mp4"
+                            )
+                    
+                    with col_video2:
+                        # 导出JSON格式的检测统计
+                        json_data = {
+                            "timestamp": timestamp,
+                            "video_info": {
+                                "total_frames": detection_stats["total_frames"],
+                                "detected_frames": detection_stats["detected_frames"],
+                                "total_detections": detection_stats["total_detections"]
+                            },
+                            "class_counts": detection_stats["class_counts"],
+                            "frame_detections": detection_stats["frame_detections"][:100]  # 只保存前100帧的详细数据
+                        }
+                        json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
+                        st.download_button(
+                            label="📄 下载检测统计 (JSON)",
+                            data=json_str.encode('utf-8'),
+                            file_name=f"video_detection_stats_{timestamp}.json",
+                            mime="application/json"
+                        )
+                    
+                    with col_video3:
+                        # 导出CSV格式的检测统计
+                        if detection_stats["frame_detections"]:
+                            # 展平数据
+                            csv_data = []
+                            for frame_data in detection_stats["frame_detections"]:
+                                if frame_data["detections"]:
+                                    for det in frame_data["detections"]:
+                                        csv_data.append({
+                                            "frame": frame_data["frame"],
+                                            "class_name": det["class_name"],
+                                            "confidence": det["confidence"]
+                                        })
+                                else:
+                                    csv_data.append({
+                                        "frame": frame_data["frame"],
+                                        "class_name": "无检测",
+                                        "confidence": 0.0
+                                    })
+                            
+                            if csv_data:
+                                df = pd.DataFrame(csv_data)
+                                csv_str = df.to_csv(index=False)
+                                st.download_button(
+                                    label="📊 下载检测统计 (CSV)",
+                                    data=csv_str.encode('utf-8'),
+                                    file_name=f"video_detection_stats_{timestamp}.csv",
+                                    mime="text/csv"
+                                )
+
+    elif app_mode == "性能测试":
+        st.subheader("⚡ 模型性能测试")
+        st.write("测试当前模型在设备上的推理速度（FPS），结果仅供参考")
+
+        if st.button("开始测试FPS"):
+            with st.spinner("正在测试性能..."):
+                fps = calculate_fps(model, input_shape)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # 获取模型信息
+                model_info = st.session_state.get("model_info", {})
+                model_name = model_info.get("name", "未知模型")
+                
+                # 性能评估
+                if fps < 10:
+                    performance_level = "较低"
+                    performance_suggestion = "建议优化：\n1. 选择更小的模型（如yolov8n）\n2. 降低输入尺寸（如640x640）\n3. 使用GPU加速"
+                    st.warning(f"性能较低，建议优化：\n1. 选择更小的模型（如yolov8n）\n2. 降低输入尺寸（如640x640）\n3. 使用GPU加速")
+                elif fps < 25:
+                    performance_level = "中等"
+                    performance_suggestion = "可满足基本实时检测需求"
+                    st.info("性能中等，可满足基本实时检测需求")
+                else:
+                    performance_level = "优异"
+                    performance_suggestion = "适合高质量实时检测"
+                    st.success("性能优异，适合高质量实时检测！")
+                
+                st.success(f"测试完成！平均FPS：{fps:.2f} 帧/秒")
+                
+                # 保存测试结果到session state
+                test_result = {
+                    "timestamp": timestamp,
+                    "model_name": model_name,
+                    "input_shape": input_shape,
+                    "fps": fps,
+                    "performance_level": performance_level,
+                    "suggestion": performance_suggestion,
+                    "conf_threshold": conf_threshold,
+                    "nms_threshold": nms_threshold
+                }
+                st.session_state["last_performance_test"] = test_result
+                
+                # 显示详细结果
+                st.markdown("---")
+                st.subheader("📊 测试详情")
+                col_perf1, col_perf2 = st.columns(2)
+                with col_perf1:
+                    st.write(f"**模型名称：** {model_name}")
+                    st.write(f"**输入尺寸：** {input_shape}x{input_shape}")
+                    st.write(f"**置信度阈值：** {conf_threshold}")
+                with col_perf2:
+                    st.write(f"**NMS阈值：** {nms_threshold}")
+                    st.write(f"**性能等级：** {performance_level}")
+                    st.write(f"**平均FPS：** {fps:.2f} 帧/秒")
+        
+        # 导出功能
+        if "last_performance_test" in st.session_state:
+            st.markdown("---")
+            st.subheader("📥 导出测试结果")
+            test_result = st.session_state["last_performance_test"]
+            
+            col_perf_export1, col_perf_export2, col_perf_export3 = st.columns(3)
+            
+            with col_perf_export1:
+                # 导出JSON格式
+                json_str = json.dumps(test_result, indent=2, ensure_ascii=False)
+                st.download_button(
+                    label="📄 下载测试报告 (JSON)",
+                    data=json_str.encode('utf-8'),
+                    file_name=f"performance_test_{test_result['timestamp']}.json",
+                    mime="application/json"
+                )
+            
+            with col_perf_export2:
+                # 导出CSV格式
+                df = pd.DataFrame([test_result])
+                csv_str = df.to_csv(index=False)
+                st.download_button(
+                    label="📊 下载测试报告 (CSV)",
+                    data=csv_str.encode('utf-8'),
+                    file_name=f"performance_test_{test_result['timestamp']}.csv",
+                    mime="text/csv"
+                )
+            
+            with col_perf_export3:
+                # 导出TXT格式（人类可读）
+                txt_content = f"""模型性能测试报告
+{'=' * 50}
+测试时间：{test_result['timestamp']}
+模型名称：{test_result['model_name']}
+输入尺寸：{test_result['input_shape']}x{test_result['input_shape']}
+置信度阈值：{test_result['conf_threshold']}
+NMS阈值：{test_result['nms_threshold']}
+{'=' * 50}
+测试结果：
+平均FPS：{test_result['fps']:.2f} 帧/秒
+性能等级：{test_result['performance_level']}
+{'=' * 50}
+建议：
+{test_result['suggestion']}
+"""
+                st.download_button(
+                    label="📝 下载测试报告 (TXT)",
+                    data=txt_content.encode('utf-8'),
+                    file_name=f"performance_test_{test_result['timestamp']}.txt",
+                    mime="text/plain"
+                )
 
     elif app_mode == "关于":
         st.subheader("📋 关于本平台")
@@ -260,6 +775,8 @@ def main():
         **核心功能**：
         - 图像检测：单张图像手势识别
         - 实时摄像头：浏览器端实时手势跟踪
+        - 视频上传：批量处理视频并保存检测结果
+        - 性能测试：评估模型在当前设备的运行速度
         
         **技术栈**：
         - 目标检测：YOLOv8（Ultralytics）
@@ -270,7 +787,7 @@ def main():
         **使用提示**：
         1. 建议在光线充足的环境下使用，提高检测准确率
         2. 手势尽量清晰可见，避免复杂背景干扰
-        3. 自定义权重需使用YOLOv8训练的手势检测模型（8类手势）
+        3. 自定义权重需使用YOLOv8训练的手势检测模型（18类手势）
         4. 实时检测建议FPS≥15，可通过调整模型和输入尺寸优化
         """)
 
